@@ -41,6 +41,12 @@ except ImportError:
 # Internal HMAC‑SHA256 (pure Python, MicroPython‑compatible)
 # ---------------------------------------------------------------------------
 
+# API endpoint paths — defined once here so callers share the same strings.
+_API_SESSION_START = "/api/session/start"
+_API_SESSION_END   = "/api/session/end"
+_API_INGEST        = "/api/ingest"
+
+
 def _hmac_sha256(key, message):
     """
     Compute HMAC‑SHA256 using only hashlib (no hmac module required).
@@ -277,7 +283,7 @@ def start_session(host, port, patient_id, device_id, hmac_key):
         print("[SOMNI][TRANSPORT] start_session: Wi‑Fi not available.")
         return None
 
-    headers  = "POST /api/session/start HTTP/1.0\r\n"
+    headers  = "POST {} HTTP/1.0\r\n".format(_API_SESSION_START)
     headers += "Host: {}\r\n".format(host)
     headers += "Content-Type: application/json\r\n"
     headers += "Content-Length: {}\r\n\r\n".format(len(body))
@@ -331,7 +337,7 @@ def end_session(host, port, session_id, hmac_key):
         bool: True if the gateway acknowledged, False otherwise.
     """
     status = send_api(
-        host, port, "/api/session/end",
+        host, port, _API_SESSION_END,
         {"session_id": session_id},
         hmac_key,
     )

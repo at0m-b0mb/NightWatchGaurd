@@ -173,4 +173,57 @@ digraph AttackTree {
 
     G3_3 -> A3_3_1;
     G3_3 -> A3_3_2;
+
+    /* ------------------------------------------------------------------ */
+    /* G4 — Compromise Tailscale Mesh                                      */
+    /* ------------------------------------------------------------------ */
+    G4 [label="G4 [OR]\nCompromise Tailscale mesh\nto bypass TB5", shape=ellipse,
+        style=filled, fillcolor="#FFB347"];
+
+    G4_1 [label="G4.1 [AND]\nEnrol a rogue device\ninto the tailnet",
+          shape=box, style=filled, fillcolor="#FFD580"];
+    A4_1_1 [label="A4.1.1\nSteal Tailscale account\ncredentials (phishing)",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A4_1_2 [label="A4.1.2\nAuthenticate rogue device\n→ 100.x.x.x IP assigned",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G4_2 [label="G4.2 [OR]\nMisconfigured Tailscale\nACL grants excess access",
+          shape=ellipse, style=filled, fillcolor="#FFD580"];
+    A4_2_1 [label="A4.2.1\nDefault 'allow all' ACL left\nin place → all nodes\nreach port 5000",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A4_2_2 [label="A4.2.2\nIncorrect tag assignment\n→ untrusted device\npermitted access",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G4_3 [label="G4.3 [AND]\nTailscale coordination-server\nsupply-chain attack",
+          shape=box, style=filled, fillcolor="#FFD580"];
+    A4_3_1 [label="A4.3.1\nTailscale Inc. infra\ncompromised → rogue\nWireGuard key injected",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A4_3_2 [label="A4.3.2\nRogue key enables MITM\nof WireGuard tunnels",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G4_4 [label="G4.4 [AND]\nWireGuard key material\ntheft on Pi 5",
+          shape=box, style=filled, fillcolor="#FFD580"];
+    A4_4_1 [label="A4.4.1\nGain OS shell on\nPi 5 (via G2.1)",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A4_4_2 [label="A4.4.2\nRead tailscaled.state\n→ extract node\nprivate key",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G0 -> G4;
+
+    G4 -> G4_1;
+    G4 -> G4_2;
+    G4 -> G4_3;
+    G4 -> G4_4;
+
+    G4_1 -> A4_1_1;
+    G4_1 -> A4_1_2;
+
+    G4_2 -> A4_2_1;
+    G4_2 -> A4_2_2;
+
+    G4_3 -> A4_3_1;
+    G4_3 -> A4_3_2;
+
+    G4_4 -> A4_4_1;
+    G4_4 -> A4_4_2;
 }

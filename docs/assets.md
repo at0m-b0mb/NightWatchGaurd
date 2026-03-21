@@ -152,3 +152,40 @@ contact" readings), replace sensors with signal generators (injecting
 arbitrary waveforms), or manipulate electrode placement.  Validity flags
 in the firmware provide limited detection, but physical security is the
 primary control.
+
+---
+
+## A6 — Tailscale Tailnet (VPN Overlay)
+
+**Type:** Network infrastructure (software VPN mesh)
+
+**Role:**
+The Tailscale tailnet provides a peer-to-peer WireGuard encrypted mesh
+network between the Pi 5 gateway and authorised clinician / developer
+laptops.  It is the secure communication channel for all remote dashboard
+access in production.
+
+**Rich description:**
+- **Control plane**: Tailscale's coordination server authenticates devices
+  and distributes WireGuard public keys.  It is operated by Tailscale Inc.
+  and is **not** on the data path (no patient data transits Tailscale's servers).
+- **Data plane**: Direct WireGuard P2P tunnels between enrolled nodes,
+  using ChaCha20-Poly1305 authenticated encryption.  Falls back to Tailscale
+  DERP relay servers if direct tunnel is blocked by NAT or firewall.
+- **MagicDNS**: Assigns stable hostnames (e.g. `somni-pi5.ts.net`) to each
+  node, removing the need for static IPs.
+- **Tailscale ACLs**: JSON policy rules in the Tailscale admin console
+  restrict which nodes can reach port 5000 on the Pi 5.
+- **Tailscale SSH**: Enables SSH to the Pi 5 through the tailnet without
+  opening port 22 to the LAN.
+
+**Trust boundary:**
+TB5 (Pi 5 ↔ remote clients over Tailscale WireGuard tunnel).
+
+**Why it must be threat-modelled:**
+If the Tailscale tailnet is compromised (rogue device enrolled, ACL policy
+misconfigured, or Tailscale coordination server compromised), an unauthorised
+party may gain access to the SOMNI-Guard web dashboard and all patient data.
+A misconfigured ACL that leaves port 5000 open to all tailnet nodes (rather
+than only clinical-staff nodes) would undermine the access-control goal even
+while using Tailscale.

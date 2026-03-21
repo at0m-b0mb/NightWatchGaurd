@@ -103,3 +103,52 @@ dot -Tpng docs/attack_tree.dot -o docs/attack_tree.png
 | G3.1 (auth bypass) | A3 |
 | G3.2 (XSS/CSRF) | A3, A4 |
 | G3.3 (SQLi/overflow) | A3, A4 |
+
+---
+
+## 5. G4 — Compromise Tailscale Mesh (new sub-tree)
+
+```
+G4 (OR): Compromise Tailscale mesh to bypass TB5
+├── G4.1 (AND): Enrol a rogue device into the tailnet
+│   ├── A4.1.1  Steal the Tailscale account credentials (phishing /
+│   │           credential stuffing against tailscale.com)
+│   └── A4.1.2  Authenticate a rogue device with the stolen account →
+│               rogue node receives 100.x.x.x IP → can reach Pi 5
+│
+├── G4.2 (OR): Misconfigured Tailscale ACL grants excess access
+│   ├── A4.2.1  Default "allow all" ACL left in place → every tailnet
+│   │           node (not just clinical staff) can reach port 5000
+│   └── A4.2.2  Incorrect tag assignment → untrusted device receives
+│               somni-clinician or somni-dev tag and is permitted access
+│
+├── G4.3 (AND): Tailscale coordination-server supply-chain attack
+│   ├── A4.3.1  Tailscale Inc. infrastructure compromised → attacker
+│   │           can inject rogue WireGuard public keys into tailnet
+│   └── A4.3.2  Rogue keys allow MITM of WireGuard tunnels →
+│               intercept or tamper with dashboard traffic
+│
+└── G4.4 (AND): WireGuard key material theft on the Pi 5
+    ├── A4.4.1  Attacker gains OS shell on Pi 5 (via G2.1 path above)
+    └── A4.4.2  Read /var/lib/tailscale/tailscaled.state → extract
+                node private key → impersonate Pi 5 on the tailnet
+```
+
+### 5.1 Alignment with Assets and PHA
+
+| Attack path | Asset(s) targeted | Hazard(s) |
+|-------------|------------------|-----------|
+| G4.1 (rogue enrolment) | A6 (tailnet), A3 (dashboard), A4 (data) | H-07 |
+| G4.2 (ACL misconfiguration) | A6, A3, A4 | H-07 |
+| G4.3 (supply-chain) | A6 | H-07 |
+| G4.4 (key theft on Pi 5) | A6, A2 | H-04, H-07 |
+
+### 5.2 Mitigations for G4
+
+| Attack | Mitigation |
+|--------|-----------|
+| G4.1 (credential theft) | Enable 2FA on Tailscale account; use Tailscale device keys with short expiry |
+| G4.2 (ACL misconfiguration) | Apply tag-based ACL (see tailscale_setup.md §7); audit ACL in Tailscale admin console |
+| G4.3 (supply-chain) | Accept residual risk; monitor Tailscale security advisories |
+| G4.4 (key file theft) | Requires prior OS shell — mitigated by L2-C6 (least-privilege); LUKS2 |
+

@@ -67,6 +67,27 @@ FLASK_PORT  = int(os.environ.get("SOMNI_PORT", "5000"))
 FLASK_DEBUG = os.environ.get("SOMNI_DEBUG", "false").lower() == "true"
 
 # ---------------------------------------------------------------------------
+# Tailscale VPN overlay
+# ---------------------------------------------------------------------------
+
+# Set SOMNI_TAILSCALE_ONLY=true in production to restrict web dashboard access
+# to Tailscale peers (100.64.0.0/10) and loopback only.
+# When false (default), all IPs can reach the dashboard — use for development.
+TAILSCALE_ONLY = os.environ.get("SOMNI_TAILSCALE_ONLY", "false").lower() == "true"
+
+# Comma-separated LAN CIDRs from which the Pico 2W may send telemetry.
+# These IPs are allowed through /api/* endpoints even in TAILSCALE_ONLY mode
+# because the Pico cannot run Tailscale and communicates over the local LAN.
+PICO_ALLOWED_CIDRS = [
+    c.strip()
+    for c in os.environ.get(
+        "SOMNI_PICO_CIDRS",
+        "192.168.0.0/16,10.0.0.0/8,172.16.0.0/12",
+    ).split(",")
+    if c.strip()
+]
+
+# ---------------------------------------------------------------------------
 # Feature‑extraction thresholds (non‑clinical heuristics)
 # ---------------------------------------------------------------------------
 

@@ -144,7 +144,7 @@ def _flush_batch():
             transport.send_api(
                 config.GATEWAY_HOST,
                 config.GATEWAY_PORT,
-                "/api/ingest",
+                transport._API_INGEST,
                 payload,
                 config.GATEWAY_HMAC_KEY,
             )

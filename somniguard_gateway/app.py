@@ -37,6 +37,7 @@ from wtforms.validators import DataRequired, Email, Length, Optional
 import config as cfg
 import database as db
 import reports as rpt
+import tailscale as ts
 
 # ---------------------------------------------------------------------------
 # Flask app + extensions
@@ -51,6 +52,47 @@ csrf    = CSRFProtect(app)
 login_mgr = LoginManager(app)
 login_mgr.login_view = "login"
 login_mgr.login_message_category = "warning"
+
+
+# ---------------------------------------------------------------------------
+# Network-access policy (Tailscale enforcement)
+# ---------------------------------------------------------------------------
+
+@app.before_request
+def _enforce_network_policy():
+    """
+    Enforce the Tailscale-only access policy when SOMNI_TAILSCALE_ONLY=true.
+
+    Web-dashboard routes require a Tailscale peer IP (100.64.0.0/10) or
+    loopback.  Pico telemetry API routes (/api/*) additionally allow private
+    LAN IPs defined in PICO_ALLOWED_CIDRS, because the Pico 2 W cannot run
+    Tailscale and communicates over the local Wi-Fi LAN segment.
+
+    In development mode (TAILSCALE_ONLY=false, the default), all IPs are
+    permitted so the gateway works without Tailscale installed.
+
+    Args:
+        None
+
+    Returns:
+        flask.Response | None: HTTP 403 JSON response if access is denied,
+                               None to continue normal request processing.
+    """
+    is_api = request.path.startswith("/api/")
+    allowed = ts.check_network_policy(
+        remote_addr=request.remote_addr,
+        tailscale_only=cfg.TAILSCALE_ONLY,
+        is_api_path=is_api,
+        pico_cidrs=cfg.PICO_ALLOWED_CIDRS,
+    )
+    if not allowed:
+        return (
+            jsonify({
+                "error": "Access denied: connect via Tailscale VPN to reach this service.",
+                "tailscale_only": True,
+            }),
+            403,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +515,43 @@ def api_session_end():
 
     db.end_session(session_id)
     return jsonify({"ok": True}), 200
+
+
+# ---------------------------------------------------------------------------
+# REST API — Tailscale status (authenticated, admin only)
+# ---------------------------------------------------------------------------
+
+@app.route("/api/tailscale/status")
+@login_required
+def api_tailscale_status():
+    """
+    Return the current Tailscale daemon status for this gateway node.
+
+    Only admin users may call this endpoint.  Returns the local Tailscale IP,
+    MagicDNS hostname, daemon state, and the list of known peers.
+
+    Response (JSON):
+        {
+          "running":    bool,
+          "local_ip":   str | null,
+          "hostname":   str | null,
+          "peers":      [{HostName, DNSName, TailscaleIPs, Online, OS}, ...],
+          "tailscale_only_mode": bool
+        }
+    """
+    # Use a manual role check rather than @admin_required because that
+    # decorator issues an HTML redirect (suitable for web pages), whereas
+    # this is a JSON API endpoint that must return 403 for non-admin callers.
+    if current_user.role != "admin":
+        return jsonify({"error": "Admin access required."}), 403
+
+    return jsonify({
+        "running":             ts.tailscale_running(),
+        "local_ip":            ts.get_local_tailscale_ip(),
+        "hostname":            ts.get_tailscale_hostname(),
+        "peers":               ts.list_tailscale_peers(),
+        "tailscale_only_mode": cfg.TAILSCALE_ONLY,
+    })
 
 
 # ---------------------------------------------------------------------------

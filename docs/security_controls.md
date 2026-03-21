@@ -220,3 +220,102 @@ against different threat scenarios:
 the defence‑in‑depth control against OS‑level compromise.  The SQLCipher
 key must be stored separately from the database (e.g., in a TPM‑backed
 keystore or a protected `/etc/somniguard/db.key` with strict permissions).
+
+---
+
+## 7. Tailscale VPN Controls (Layer 0 — Network Perimeter)
+
+These controls operate below the application layer.  They do not replace
+application-level authentication but add a strong network perimeter that
+limits which devices can reach the SOMNI-Guard web service.
+
+### L0-C1: Tailscale peer authentication (WireGuard mTLS)
+
+**Threat mitigated:** H-07 (G4.1, G4.2), H-04 (network exposure)
+
+Every device on the SOMNI-Guard tailnet is mutually authenticated by the
+Tailscale control plane using device certificates.  WireGuard tunnels use
+ChaCha20-Poly1305 authenticated encryption.  An attacker who does not hold
+a valid Tailscale node key cannot participate in the tailnet at all.
+
+**Implementation:** `tailscaled` systemd service on the Pi 5;
+`tailscale.is_tailscale_ip()` in `tailscale.py` classifies remote IPs.
+
+### L0-C2: TAILSCALE_ONLY network policy on the gateway
+
+**Threat mitigated:** H-07 (G4.2), H-04 (network exposure)
+
+When `SOMNI_TAILSCALE_ONLY=true`, the Flask `before_request` hook
+(`app._enforce_network_policy`) rejects any HTTP request whose source IP is
+not in the Tailscale CGNAT range (100.64.0.0/10) or loopback.  Pico API
+endpoints (`/api/*`) additionally accept private LAN IPs (RFC 1918) because
+the Pico 2W cannot run Tailscale.
+
+**Implementation:** `app.py:_enforce_network_policy()`;
+`tailscale.check_network_policy()`; `config.TAILSCALE_ONLY` and
+`config.PICO_ALLOWED_CIDRS`.
+
+### L0-C3: Tailscale ACL tag policy
+
+**Threat mitigated:** H-07 (G4.2 — excess access within tailnet)
+
+A tag-based Tailscale ACL restricts which tailnet nodes may reach port 5000
+on the Pi 5 gateway.  Only devices tagged `somni-clinician` or `somni-dev`
+are permitted; new devices enrolled in the account but not yet tagged cannot
+reach the dashboard even if they hold a valid tailnet key.
+
+**Implementation:** ACL JSON in the Tailscale admin console (see
+`docs/tailscale_setup.md §7`).
+
+### L0-C4: Tailscale account 2FA and device-key expiry
+
+**Threat mitigated:** H-07 (G4.1 — credential theft)
+
+Enabling two-factor authentication on the Tailscale account prevents an
+attacker from enrolling a rogue device even if the account password is
+compromised.  Device-key expiry (configurable in Tailscale settings) ensures
+that stale or lost devices are automatically de-authorised without manual
+intervention.
+
+**Implementation:** Tailscale admin console security settings.
+
+### L0-C5: Pico → Pi 5 HMAC authentication (complement to Tailscale)
+
+**Threat mitigated:** TB2 attacks (G1.1 replay, G1.2 Wi-Fi attacks)
+
+The Pico 2W cannot join the Tailscale tailnet.  Its telemetry is authenticated
+by HMAC-SHA256 on every packet using a shared key stored in
+`somniguard_pico/config.py` (GATEWAY_HMAC_KEY) and `/etc/somniguard/env`
+(SOMNI_HMAC_KEY).  This provides packet-level integrity for the local LAN
+hop (TB2) that Tailscale covers for the Pi 5 ↔ laptop hop (TB5).
+
+**Implementation:** `somniguard_pico/transport.py:_hmac_sha256()`;
+`somniguard_gateway/app.py:_verify_hmac()`.
+
+---
+
+## 8. Control ↔ Attack Tree / PHA Alignment (updated)
+
+| Control | Attack path(s) mitigated | Hazard(s) addressed |
+|---------|--------------------------|---------------------|
+| L0-C1 Tailscale WireGuard mTLS | G4.1 (partial), G4.3 (partial) | H-07 |
+| L0-C2 TAILSCALE_ONLY policy | G4.2, network exposure | H-04, H-07 |
+| L0-C3 Tailscale ACL tags | G4.2 | H-07 |
+| L0-C4 2FA + device-key expiry | G4.1 | H-07 |
+| L0-C5 Pico HMAC auth | G1.1, G1.2 | H-01, H-06 |
+| L1-C1 Fail-soft sensors | — | H-02, H-06 |
+| L1-C2 Validity flags | G1.3.1 | H-01, H-02 |
+| L1-C3 Top-level catch | — | H-06 |
+| L1-C4 Telemetry HMAC | G1.1 | H-01 |
+| L1-C5 Timestamp tagging | G1.1 (partial) | H-01 |
+| L2-C1 Input validation | G1.1, G1.2.3, G1.2.4 | H-01, H-06 |
+| L2-C2 Parameterised SQL | G3.3.1 | H-05 |
+| L2-C3 SQLCipher | G2.2 | H-04 |
+| L2-C4 LUKS2 | G2.2, G4.4 (partial) | H-04 |
+| L2-C5 Report signing | G2.1, G2.2, G2.3, G2.4 | H-03, H-05 |
+| L2-C6 Least-privilege | G2.1.1, G4.4 (partial) | H-04 |
+| L3-C1 bcrypt + rate-limit | G3.1.1 | H-04 |
+| L3-C2 CSRF tokens | G3.2.2 | H-05 |
+| L3-C3 CSP + auto-escape | G3.2.1 | H-05 |
+| L3-C4 Tailscale-only bind | G4.2, network exposure | H-04, H-07 |
+| L3-C5 HTTPS (future) | G1.2.4 | H-04 |

@@ -135,3 +135,32 @@
 | H‑04 | G3.1, G2.2 | A2, A3, A4 |
 | H‑05 | G3.2.1 | A3 |
 | H‑06 | G1.2.2, G1.2.3 | A1, A2, A4 |
+
+---
+
+### H‑07: Unauthorised dashboard access via Tailscale misconfiguration or rogue peer
+
+| Field | Detail |
+|-------|--------|
+| **Hazard ID** | H-07 |
+| **Hazard** | An unauthorised device joins the Tailscale tailnet and accesses the SOMNI-Guard web dashboard, viewing or altering patient data |
+| **Cause chain** | Attack path G4.1 (Tailscale credentials stolen → rogue device enrolled) or G4.2 (ACL left at default "allow all") → device receives 100.x.x.x IP → passes TAILSCALE_ONLY check → reaches Flask login page → brute-forces or phishes credentials → reads / modifies patient reports |
+| **Assets affected** | A6 (tailnet), A3 (dashboard), A4 (patient data) |
+| **Severity (S)** | 3 — Critical (patient data confidentiality breach; potential misdiagnosis if reports are altered) |
+| **Likelihood (L)** | 2 — Occasional (requires credential theft OR ACL misconfiguration; Tailscale account is a separate authentication layer) |
+| **Risk (R)** | 6 — Medium |
+| **Mitigations** | (1) Enable 2FA on the Tailscale account (primary control). (2) Apply tag-based ACL to restrict port 5000 access to `tag:somni-clinician` and `tag:somni-dev` nodes only. (3) Flask authentication (bcrypt) remains required even inside the tailnet — defence in depth. (4) Monitor Tailscale admin console for unexpected device enrolments. (5) Set short device-key expiry in Tailscale settings so stale devices are automatically de-authorised. |
+
+---
+
+## PHA ↔ Attack Tree Alignment Summary (updated)
+
+| Hazard | Attack path(s) | Assets |
+|--------|---------------|--------|
+| H-01 | G1.1, G1.3.2 | A1, A4, A5 |
+| H-02 | (artefact, no attack) | A1, A4, A5 |
+| H-03 | G2.1, G2.2 | A2, A4 |
+| H-04 | G3.1, G2.2, G4.4 | A2, A3, A4 |
+| H-05 | G3.2.1 | A3 |
+| H-06 | G1.2.2, G1.2.3 | A1, A2, A4 |
+| H-07 | G4.1, G4.2, G4.3, G4.4 | A3, A4, A6 |
