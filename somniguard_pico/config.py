@@ -94,3 +94,39 @@ ADXL345_SCALE_G = 0.0039        # g per count
 
 # Movement magnitude threshold for arousal detection (non‑clinical heuristic)
 ACCEL_MOVEMENT_THRESHOLD_G = 0.05   # 0.05 g RMS change = minor movement
+
+# ---------------------------------------------------------------------------
+# Wi‑Fi and gateway transport settings
+# ---------------------------------------------------------------------------
+
+# Wi‑Fi credentials for the local network shared with the Pi 5 gateway.
+# Change these to match your access point.
+WIFI_SSID     = "SomniGuard_Net"   # Wi‑Fi network name
+WIFI_PASSWORD = "change-me-wifi"   # Wi‑Fi password
+
+# Pi 5 gateway address (LAN IP or hostname).
+GATEWAY_HOST = "192.168.1.100"     # Change to the Pi 5's IP address
+GATEWAY_PORT = 5000                # Port the Flask gateway listens on
+
+# Patient ID to use when starting a session on the gateway.
+# Create the patient record via the web dashboard first, then set this ID.
+GATEWAY_PATIENT_ID = 1            # patient.id in the gateway database
+
+# Unique identifier for this Pico device (used in the sessions table).
+DEVICE_ID = "pico-01"
+
+# Shared HMAC key — must exactly match PICO_HMAC_KEY in the gateway config.py.
+# Generate a strong random key and set it in both places:
+#   python3 -c "import secrets; print(secrets.token_hex(32))"
+GATEWAY_HMAC_KEY = "dev-hmac-key-change-this-in-production-32chrs!"
+
+# How many full 1 Hz samples to buffer locally before sending to the gateway.
+# Increase if the Wi‑Fi connection is unreliable.
+TRANSPORT_BATCH_SIZE = 5           # send every 5 seconds worth of 1 Hz readings
+
+# Wi‑Fi connection timeout in seconds.
+WIFI_CONNECT_TIMEOUT_S = 30
+
+# Whether to enable the Wi‑Fi transport.  Set to False to run in
+# USB‑serial‑only debug mode (no network required).
+TRANSPORT_ENABLED = True

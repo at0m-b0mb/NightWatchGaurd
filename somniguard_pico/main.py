@@ -1,5 +1,5 @@
 """
-main.py — SOMNI‑Guard Pico 2 W application entry point (sensor layer).
+main.py — SOMNI‑Guard Pico 2 W application entry point.
 
 This is the top‑level script that runs on the Raspberry Pi Pico 2 W when
 the device boots.  It:
@@ -8,19 +8,16 @@ the device boots.  It:
 2. Instantiates SensorSampler and checks all sensors; logs missing sensors
    but does NOT abort — fail‑soft behaviour means the device keeps running
    even if one sensor is absent or faulty.
-3. Configures the onboard LED to blink once per second as a heartbeat.
-4. Registers a data callback that formats and prints each reading with a
-   ``[SOMNI][DATA]`` prefix for downstream capture / debugging.
-5. Starts the timer‑driven sampling loop.
-6. Wraps the entire main flow in a top‑level try/except so that unexpected
+3. Connects to Wi‑Fi and opens a session on the Pi 5 gateway (if
+   TRANSPORT_ENABLED = True in config.py).
+4. Configures the onboard LED to blink once per second as a heartbeat.
+5. Registers a data callback that:
+   a. Formats and prints each reading with a ``[SOMNI][DATA]`` prefix.
+   b. Buffers full 1 Hz readings and periodically POSTs them to the gateway.
+6. Starts the timer‑driven sampling loop.
+7. Wraps the entire main flow in a top‑level try/except so that unexpected
    errors are caught, logged with ``[SOMNI][FATAL]``, and — where possible —
-   the device attempts to restart the sampling loop rather than halting.
-
-Phase note
-----------
-This phase implements the sensor layer only.  Wi‑Fi transport, gateway
-communication, and feature fusion are NOT implemented here; they will be
-added in a subsequent phase.
+   the device attempts to restart rather than halting.
 
 Educational prototype — not a clinically approved device.
 """
@@ -29,6 +26,7 @@ import time
 import config
 import utils
 from sampler import SensorSampler
+import transport
 
 # Import machine peripherals — must run on RP2350 MicroPython
 try:
@@ -45,6 +43,12 @@ except ImportError:
 # ---------------------------------------------------------------------------
 _led = None          # machine.Pin for onboard LED
 _led_state = False   # current LED on/off state
+
+# ---------------------------------------------------------------------------
+# Transport / session state
+# ---------------------------------------------------------------------------
+_session_id   = None   # session ID assigned by the gateway
+_pending_batch = []    # buffer of full 1 Hz readings waiting to be sent
 
 
 def _toggle_led():
@@ -71,11 +75,13 @@ def _on_sensor_data(data):
     """
     Callback invoked by SensorSampler on every sampling event.
 
-    Formats the data dictionary as a compact string and prints it with the
-    ``[SOMNI][DATA]`` prefix so it can be captured over USB‑serial or UART.
+    For full 1 Hz readings (containing "spo2" and "gsr"):
+    - Formats and prints the reading with ``[SOMNI][DATA]``.
+    - Adds the reading to the pending batch buffer.
+    - When the batch is full, POSTs all buffered readings to the gateway.
 
     For 10 Hz accelerometer‑only ticks the dict will not contain "spo2" or
-    "gsr" keys; format_reading() handles missing keys gracefully.
+    "gsr" keys; only prints, no network send (to avoid overwhelming Wi‑Fi).
 
     Args:
         data (dict): Sensor reading dictionary from SensorSampler.
@@ -83,16 +89,67 @@ def _on_sensor_data(data):
     Returns:
         None
     """
+    global _pending_batch, _session_id
+
     try:
-        # Blink LED once per full 1 Hz sample (not on every 10 Hz accel tick)
-        if "spo2" in data:
+        is_full_reading = "spo2" in data
+
+        if is_full_reading:
             _toggle_led()
 
         line = utils.format_reading(data)
         print("[SOMNI][DATA] " + line)
 
+        # Only buffer and transmit full 1 Hz readings
+        if not is_full_reading or not config.TRANSPORT_ENABLED:
+            return
+
+        if _session_id is None:
+            return   # transport not ready yet; drop reading
+
+        _pending_batch.append(data)
+
+        if len(_pending_batch) >= config.TRANSPORT_BATCH_SIZE:
+            _flush_batch()
+
     except Exception as exc:
         print("[SOMNI][CB] Callback error: {}".format(exc))
+
+
+# ---------------------------------------------------------------------------
+# Transport helpers
+# ---------------------------------------------------------------------------
+
+def _flush_batch():
+    """
+    Send all buffered readings to the gateway, then clear the batch.
+
+    Sends each reading individually to the /api/ingest endpoint.
+    If any send fails the reading is silently dropped (fail‑soft).
+
+    Args:
+        None
+
+    Returns:
+        None
+    """
+    global _pending_batch
+    batch = _pending_batch
+    _pending_batch = []
+
+    for reading in batch:
+        try:
+            payload = dict(reading)
+            payload["session_id"] = _session_id
+            transport.send_api(
+                config.GATEWAY_HOST,
+                config.GATEWAY_PORT,
+                "/api/ingest",
+                payload,
+                config.GATEWAY_HMAC_KEY,
+            )
+        except Exception as exc:
+            print("[SOMNI][TRANSPORT] flush error: {}".format(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -172,7 +229,38 @@ def main():
             time.sleep_ms(500)
 
     # ---------------------------------------------------------------
-    # 4. Start sampling loop
+    # 4. Wi‑Fi and gateway session setup
+    # ---------------------------------------------------------------
+    global _session_id
+    if config.TRANSPORT_ENABLED:
+        ip = transport.connect_wifi(
+            config.WIFI_SSID,
+            config.WIFI_PASSWORD,
+            timeout_s=config.WIFI_CONNECT_TIMEOUT_S,
+        )
+        if ip:
+            print("[SOMNI] Connected to Wi‑Fi as {}.".format(ip))
+            _session_id = transport.start_session(
+                config.GATEWAY_HOST,
+                config.GATEWAY_PORT,
+                config.GATEWAY_PATIENT_ID,
+                config.DEVICE_ID,
+                config.GATEWAY_HMAC_KEY,
+            )
+            if _session_id:
+                print("[SOMNI] Gateway session started: ID {}.".format(_session_id))
+            else:
+                print("[SOMNI][WARN] Could not start gateway session; "
+                      "data will be logged locally only.")
+        else:
+            print("[SOMNI][WARN] Wi‑Fi unavailable; "
+                  "data will be logged locally only.")
+    else:
+        print("[SOMNI] Transport disabled (TRANSPORT_ENABLED=False); "
+              "USB‑serial only.")
+
+    # ---------------------------------------------------------------
+    # 5. Start sampling loop
     # ---------------------------------------------------------------
     try:
         sampler.start_sampling_loop(_on_sensor_data)
@@ -184,7 +272,7 @@ def main():
         return
 
     # ---------------------------------------------------------------
-    # 5. Idle loop — keep main thread alive; timer callback does work
+    # 6. Idle loop — keep main thread alive; timer callback does work
     # ---------------------------------------------------------------
     print("[SOMNI] Sampling active. Press Ctrl‑C to stop.")
     try:
@@ -195,10 +283,22 @@ def main():
     except Exception as exc:
         print("[SOMNI][FATAL] Idle loop error: {}".format(exc))
     finally:
+        # Flush any remaining batch before shutdown
+        if _pending_batch and _session_id:
+            _flush_batch()
+        # End the gateway session
+        if _session_id and config.TRANSPORT_ENABLED:
+            transport.end_session(
+                config.GATEWAY_HOST,
+                config.GATEWAY_PORT,
+                _session_id,
+                config.GATEWAY_HMAC_KEY,
+            )
         if sampler is not None:
             sampler.stop()
         if _led is not None:
             _led.value(0)
+        transport.disconnect_wifi()
         print("[SOMNI] Shutdown complete.")
 
 

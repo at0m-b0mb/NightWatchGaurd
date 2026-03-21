@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Session #{{ sess.id }} — SOMNI‑Guard{% endblock %}
+{% block content %}
+<h1>🌙 Session #{{ sess.id }} — {{ sess.patient_name }}</h1>
+
+<div style="margin-bottom:.75rem;">
+  <a class="btn btn-secondary btn-sm" href="{{ url_for('patient_detail', patient_id=sess.patient_id) }}">
+    ← Back to Patient
+  </a>
+</div>
+
+<!-- Session metadata -->
+<div class="card">
+  <h2>Session Information</h2>
+  <table style="width:auto;">
+    <tr><th>Session ID</th>  <td>{{ sess.id }}</td></tr>
+    <tr><th>Patient</th>     <td>{{ sess.patient_name }}</td></tr>
+    <tr><th>DOB</th>         <td>{{ sess.patient_dob or '—' }}</td></tr>
+    <tr><th>Device</th>      <td>{{ sess.device_id }}</td></tr>
+    <tr><th>Started</th>     <td>{{ sess.started_at }}</td></tr>
+    <tr><th>Ended</th>       <td>{{ sess.ended_at or '⏳ ongoing' }}</td></tr>
+    <tr><th>Notes</th>       <td>{{ sess.notes or '—' }}</td></tr>
+  </table>
+</div>
+
+<!-- Summary stats (if report exists) -->
+{% if summary %}
+<div class="card">
+  <h2>📋 Sleep Summary (non‑clinical)</h2>
+  <div class="stat-grid">
+    <div class="stat-box">
+      <div class="val">{{ summary.spo2.mean if summary.spo2.mean else '—' }}%</div>
+      <div class="lbl">Mean SpO₂</div>
+    </div>
+    <div class="stat-box">
+      <div class="val">{{ summary.spo2.min if summary.spo2.min else '—' }}%</div>
+      <div class="lbl">Min SpO₂</div>
+    </div>
+    <div class="stat-box">
+      <div class="val">{{ summary.hr.mean if summary.hr.mean else '—' }}</div>
+      <div class="lbl">Mean HR (bpm)</div>
+    </div>
+    <div class="stat-box">
+      <div class="val">{{ summary.desaturation_events }}</div>
+      <div class="lbl">Desaturation Events</div>
+    </div>
+    <div class="stat-box">
+      <div class="val">{{ summary.movement_events }}</div>
+      <div class="lbl">Movement Events</div>
+    </div>
+    <div class="stat-box">
+      <div class="val">{{ summary.duration_s }}s</div>
+      <div class="lbl">Session Duration</div>
+    </div>
+  </div>
+  <p class="muted" style="margin-top:.5rem; font-size:.8rem;">
+    {{ summary.non_clinical_note }}
+  </p>
+</div>
+{% endif %}
+
+<!-- Report actions -->
+<div class="card">
+  <h2>📄 Report</h2>
+  <form method="post" action="{{ url_for('generate_report', session_id=sess.id) }}" style="display:inline;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-success">
+      {% if report %}🔄 Regenerate Report{% else %}⚙️ Generate Report{% endif %}
+    </button>
+  </form>
+  {% if report and report.pdf_path %}
+    <a class="btn btn-primary" href="{{ url_for('download_report', session_id=sess.id) }}" style="margin-left:.5rem;">
+      ⬇️ Download PDF
+    </a>
+    <p class="muted" style="margin-top:.5rem;">Last generated: {{ report.generated_at }}</p>
+    {% if report.hmac_sig %}
+    <p class="muted" style="font-size:.78rem;">
+      Report integrity (HMAC-SHA256): <code>{{ report.hmac_sig[:32] }}…</code>
+    </p>
+    {% endif %}
+  {% endif %}
+</div>
+
+<!-- Raw telemetry table -->
+<div class="card">
+  <h2>📡 Raw Telemetry (showing up to 200 readings)</h2>
+  {% if telemetry %}
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>t (ms)</th>
+          <th>SpO₂ %</th>
+          <th>HR bpm</th>
+          <th>Accel X g</th>
+          <th>Accel Y g</th>
+          <th>Accel Z g</th>
+          <th>GSR µS</th>
+          <th>Valid</th>
+          <th>Received</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in telemetry %}
+        <tr>
+          <td>{{ r.timestamp_ms }}</td>
+          <td>{% if r.spo2 is not none %}{{ "%.1f"|format(r.spo2) }}{% else %}—{% endif %}</td>
+          <td>{% if r.hr is not none %}{{ "%.1f"|format(r.hr) }}{% else %}—{% endif %}</td>
+          <td>{% if r.accel_x is not none %}{{ "%.3f"|format(r.accel_x) }}{% else %}—{% endif %}</td>
+          <td>{% if r.accel_y is not none %}{{ "%.3f"|format(r.accel_y) }}{% else %}—{% endif %}</td>
+          <td>{% if r.accel_z is not none %}{{ "%.3f"|format(r.accel_z) }}{% else %}—{% endif %}</td>
+          <td>{% if r.gsr_conductance_us is not none %}{{ "%.2f"|format(r.gsr_conductance_us) }}{% else %}—{% endif %}</td>
+          <td>
+            {% if r.valid_spo2 %}SpO₂ {% endif %}
+            {% if r.valid_accel %}Accel {% endif %}
+            {% if r.valid_gsr %}GSR{% endif %}
+          </td>
+          <td class="muted">{{ r.received_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No telemetry received for this session yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
