@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SOMNI‑Guard{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, sans-serif;
+      background: #f0f4f8; color: #222;
+      font-size: 15px; line-height: 1.55;
+    }
+    /* ── nav ── */
+    nav {
+      background: #1a3a5c; color: #fff;
+      display: flex; align-items: center;
+      padding: 0 1.5rem; height: 52px; gap: 1.5rem;
+    }
+    nav .brand { font-weight: 700; font-size: 1.1rem; color: #a8d4f5; text-decoration: none; }
+    nav a { color: #cce0f5; text-decoration: none; font-size: 0.9rem; }
+    nav a:hover { color: #fff; }
+    nav .spacer { flex: 1; }
+    nav .user-info { font-size: 0.82rem; color: #94b8d8; }
+    /* ── layout ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+    /* ── cards ── */
+    .card {
+      background: #fff; border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.1);
+      padding: 1.25rem 1.5rem; margin-bottom: 1.25rem;
+    }
+    /* ── disclaimer banner ── */
+    .disclaimer {
+      background: #fff3f3; border: 1px solid #f5c6c6;
+      border-radius: 6px; padding: .6rem 1rem;
+      color: #c0392b; font-size: 0.82rem;
+      margin-bottom: 1rem;
+    }
+    /* ── alerts ── */
+    .alert { border-radius: 6px; padding: .6rem 1rem; margin-bottom: .75rem; font-size: .9rem; }
+    .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+    .alert-danger  { background: #f8d7da; color: #721c24; border: 1px solid #f5c6c6; }
+    .alert-warning { background: #fff3cd; color: #856404; border: 1px solid #ffeeba; }
+    .alert-info    { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+    /* ── tables ── */
+    table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+    th { background: #1a3a5c; color: #fff; padding: .55rem .75rem; text-align: left; }
+    td { padding: .45rem .75rem; border-bottom: 1px solid #e2e8f0; }
+    tr:hover td { background: #f0f7ff; }
+    /* ── buttons ── */
+    .btn {
+      display: inline-block; padding: .4rem .95rem;
+      border-radius: 5px; border: none; cursor: pointer;
+      font-size: .88rem; font-weight: 600; text-decoration: none;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .85; }
+    .btn-primary  { background: #1a3a5c; color: #fff; }
+    .btn-success  { background: #27ae60; color: #fff; }
+    .btn-danger   { background: #c0392b; color: #fff; }
+    .btn-secondary{ background: #6c757d; color: #fff; }
+    .btn-sm       { padding: .25rem .6rem; font-size: .8rem; }
+    /* ── forms ── */
+    .form-group { margin-bottom: .85rem; }
+    label { display: block; font-weight: 600; font-size: .88rem; margin-bottom: .3rem; }
+    input[type=text], input[type=email], input[type=password],
+    input[type=date], select, textarea {
+      width: 100%; padding: .45rem .7rem;
+      border: 1px solid #bcc8d4; border-radius: 5px;
+      font-size: .9rem; background: #fafcff;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: #1a3a5c;
+      box-shadow: 0 0 0 2px rgba(26,58,92,.15);
+    }
+    textarea { min-height: 80px; resize: vertical; }
+    /* ── misc ── */
+    h1 { font-size: 1.5rem; margin: 0 0 1rem; color: #1a3a5c; }
+    h2 { font-size: 1.15rem; margin: 0 0 .75rem; color: #1a3a5c; }
+    .badge {
+      display: inline-block; padding: .2rem .55rem;
+      border-radius: 12px; font-size: .75rem; font-weight: 700;
+    }
+    .badge-admin  { background: #fdebd0; color: #784212; }
+    .badge-clini  { background: #d1f0e0; color: #145a32; }
+    .muted { color: #6c757d; font-size: .85rem; }
+    .stat-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr));
+      gap: .75rem; margin-bottom: 1rem;
+    }
+    .stat-box {
+      background: #f0f7ff; border: 1px solid #cce0f5;
+      border-radius: 8px; padding: .75rem 1rem; text-align: center;
+    }
+    .stat-box .val { font-size: 1.6rem; font-weight: 700; color: #1a3a5c; }
+    .stat-box .lbl { font-size: .78rem; color: #5a7a9a; margin-top: .2rem; }
+  </style>
+</head>
+<body>
+<nav>
+  <a class="brand" href="{{ url_for('dashboard') }}">🌙 SOMNI‑Guard</a>
+  {% if current_user.is_authenticated %}
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('patients') }}">Patients</a>
+    {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('manage_users') }}">Users</a>
+    {% endif %}
+    <span class="spacer"></span>
+    <span class="user-info">{{ current_user.username }} ({{ current_user.role }})</span>
+    <a href="{{ url_for('logout') }}">Logout</a>
+  {% else %}
+    <span class="spacer"></span>
+  {% endif %}
+</nav>
+
+<div class="container">
+  <div class="disclaimer">
+    ⚠️ <strong>NON‑CLINICAL EDUCATIONAL PROTOTYPE.</strong>
+    This system is NOT a regulated medical device and must NOT be used for diagnosis or treatment.
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</div>
+</body>
+</html>

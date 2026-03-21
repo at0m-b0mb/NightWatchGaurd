@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Patients — SOMNI‑Guard{% endblock %}
+{% block content %}
+<h1>🧑‍⚕️ Patients</h1>
+
+<div class="card">
+  <h2>Add New Patient</h2>
+  <form method="post" action="{{ url_for('new_patient') }}" novalidate>
+    {{ form.hidden_tag() }}
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:.75rem;">
+      <div class="form-group">
+        {{ form.name.label }}
+        {{ form.name(placeholder="Full name") }}
+      </div>
+      <div class="form-group">
+        {{ form.dob.label }}
+        {{ form.dob() }}
+      </div>
+    </div>
+    <div class="form-group">
+      {{ form.notes.label }}
+      {{ form.notes(placeholder="Optional clinical notes…") }}
+    </div>
+    <button type="submit" class="btn btn-success">Add Patient</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All Patients ({{ patients | length }})</h2>
+  {% if patients %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Name</th>
+        <th>Date of Birth</th>
+        <th>Notes</th>
+        <th>Created By</th>
+        <th>Created At</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in patients %}
+      <tr>
+        <td>{{ p.id }}</td>
+        <td><strong>{{ p.name }}</strong></td>
+        <td>{{ p.dob or '—' }}</td>
+        <td class="muted">{{ (p.notes or '')[:60] }}{% if p.notes and p.notes|length > 60 %}…{% endif %}</td>
+        <td>{{ p.created_by_name or '—' }}</td>
+        <td class="muted">{{ p.created_at }}</td>
+        <td>
+          <a class="btn btn-primary btn-sm" href="{{ url_for('patient_detail', patient_id=p.id) }}">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No patients yet. Add one above.</p>
+  {% endif %}
+</div>
+{% endblock %}
