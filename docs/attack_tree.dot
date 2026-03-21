@@ -1,0 +1,176 @@
+/*
+ * attack_tree.dot — SOMNI‑Guard Attack Tree (Graphviz DOT)
+ *
+ * Root goal: G0 — Misdiagnose SOMNI‑Guard patient condition
+ *
+ * Render:
+ *   dot -Tsvg docs/attack_tree.dot -o docs/attack_tree.svg
+ *   dot -Tpng docs/attack_tree.dot -o docs/attack_tree.png
+ *
+ * Node shapes:
+ *   ellipse  = OR goal  (any child sufficient)
+ *   box      = AND goal (all children required)
+ *   diamond  = attack leaf
+ *
+ * Educational prototype — not a clinically approved device.
+ */
+
+digraph AttackTree {
+    rankdir=TB;
+    node [fontname="Helvetica", fontsize=10];
+    edge [fontname="Helvetica", fontsize=9];
+
+    /* ------------------------------------------------------------------ */
+    /* Root                                                                 */
+    /* ------------------------------------------------------------------ */
+    G0 [label="G0 [OR]\nMisdiagnose patient condition", shape=ellipse,
+        style=filled, fillcolor="#FF6B6B"];
+
+    /* ------------------------------------------------------------------ */
+    /* G1 — Tamper with telemetry                                          */
+    /* ------------------------------------------------------------------ */
+    G1 [label="G1 [OR]\nTamper with telemetry\n(Pico → Pi 5)", shape=ellipse,
+        style=filled, fillcolor="#FFB347"];
+
+    G1_1 [label="G1.1 [AND]\nReplay valid telemetry\nto mask apnea event",
+          shape=box, style=filled, fillcolor="#FFD580"];
+    A1_1_1 [label="A1.1.1\nCapture valid telemetry\nfrom wire", shape=diamond,
+            style=filled, fillcolor="#FFFACD"];
+    A1_1_2 [label="A1.1.2\nCraft replay packet\nwith forged timestamp",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A1_1_3 [label="A1.1.3\nInject replay packet\ninto ingestion channel",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G1_2 [label="G1.2 [OR]\nWi‑Fi / TCP‑layer\nattacks", shape=ellipse,
+          style=filled, fillcolor="#FFD580"];
+    A1_2_1 [label="A1.2.1\nARP spoofing", shape=diamond,
+            style=filled, fillcolor="#FFFACD"];
+    A1_2_2 [label="A1.2.2\nWi‑Fi DoS /\nde‑auth", shape=diamond,
+            style=filled, fillcolor="#FFFACD"];
+    A1_2_3 [label="A1.2.3\nTCP SYN flood", shape=diamond,
+            style=filled, fillcolor="#FFFACD"];
+    A1_2_4 [label="A1.2.4\nTCP session hijack", shape=diamond,
+            style=filled, fillcolor="#FFFACD"];
+
+    G1_3 [label="G1.3 [OR]\nPhysical sensor\ntampering", shape=ellipse,
+          style=filled, fillcolor="#FFD580"];
+    A1_3_1 [label="A1.3.1\nRemove sensor\n→ valid=False,\nno alert",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A1_3_2 [label="A1.3.2\nReplace sensor\nwith signal generator",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    /* ------------------------------------------------------------------ */
+    /* G2 — Tamper with stored data / reports                              */
+    /* ------------------------------------------------------------------ */
+    G2 [label="G2 [OR]\nTamper with stored data\n/ reports on Pi 5",
+        shape=ellipse, style=filled, fillcolor="#FFB347"];
+
+    G2_1 [label="G2.1 [AND]\nDirect DB modification\nvia remote shell",
+          shape=box, style=filled, fillcolor="#FFD580"];
+    A2_1_1 [label="A2.1.1\nExploit ingestion/Flask\nvuln → OS shell",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A2_1_2 [label="A2.1.2\nRun SQL UPDATE/DELETE\non SQLite DB",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G2_2 [label="G2.2 [AND]\nPhysical SD‑card removal\n& offline modification",
+          shape=box, style=filled, fillcolor="#FFD580"];
+    A2_2_1 [label="A2.2.1\nPhysical access +\nSD card removed",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A2_2_2 [label="A2.2.2\nMount offline, bypass/\ndecrypt, modify DB",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G2_3 [label="G2.3 [AND]\nKey‑store compromise\n→ forged report signature",
+          shape=box, style=filled, fillcolor="#FFD580"];
+    A2_3_1 [label="A2.3.1\nExtract HMAC key\nfrom filesystem",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A2_3_2 [label="A2.3.2\nSign tampered report\nwith extracted key",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G2_4 [label="G2.4 [OR]\nBypass report‑integrity\ncheck", shape=ellipse,
+          style=filled, fillcolor="#FFD580"];
+    A2_4_1 [label="A2.4.1\nDelete signature field\n(checker skips missing)",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A2_4_2 [label="A2.4.2\nExploit verification\nbug (timing, length‑ext.)",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    /* ------------------------------------------------------------------ */
+    /* G3 — Misuse / compromise Web Dashboard                              */
+    /* ------------------------------------------------------------------ */
+    G3 [label="G3 [OR]\nMisuse or compromise\nWeb Dashboard",
+        shape=ellipse, style=filled, fillcolor="#FFB347"];
+
+    G3_1 [label="G3.1 [OR]\nAuthentication bypass",
+          shape=ellipse, style=filled, fillcolor="#FFD580"];
+    A3_1_1 [label="A3.1.1\nBrute‑force login\n(no lockout)",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A3_1_2 [label="A3.1.2\nPhishing → harvest\nclinician credentials",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G3_2 [label="G3.2 [OR]\nClient‑side injection",
+          shape=ellipse, style=filled, fillcolor="#FFD580"];
+    A3_2_1 [label="A3.2.1\nStored XSS via\nsession name field",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A3_2_2 [label="A3.2.2\nCSRF → state‑changing\nrequest from clinician",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    G3_3 [label="G3.3 [OR]\nServer‑side exploitation",
+          shape=ellipse, style=filled, fillcolor="#FFD580"];
+    A3_3_1 [label="A3.3.1\nSQL injection via\nunparameterised query",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+    A3_3_2 [label="A3.3.2\nBuffer overflow in\nC extension / library",
+            shape=diamond, style=filled, fillcolor="#FFFACD"];
+
+    /* ------------------------------------------------------------------ */
+    /* Edges                                                                */
+    /* ------------------------------------------------------------------ */
+
+    G0 -> G1;
+    G0 -> G2;
+    G0 -> G3;
+
+    G1 -> G1_1;
+    G1 -> G1_2;
+    G1 -> G1_3;
+
+    G1_1 -> A1_1_1;
+    G1_1 -> A1_1_2;
+    G1_1 -> A1_1_3;
+
+    G1_2 -> A1_2_1;
+    G1_2 -> A1_2_2;
+    G1_2 -> A1_2_3;
+    G1_2 -> A1_2_4;
+
+    G1_3 -> A1_3_1;
+    G1_3 -> A1_3_2;
+
+    G2 -> G2_1;
+    G2 -> G2_2;
+    G2 -> G2_3;
+    G2 -> G2_4;
+
+    G2_1 -> A2_1_1;
+    G2_1 -> A2_1_2;
+
+    G2_2 -> A2_2_1;
+    G2_2 -> A2_2_2;
+
+    G2_3 -> A2_3_1;
+    G2_3 -> A2_3_2;
+
+    G2_4 -> A2_4_1;
+    G2_4 -> A2_4_2;
+
+    G3 -> G3_1;
+    G3 -> G3_2;
+    G3 -> G3_3;
+
+    G3_1 -> A3_1_1;
+    G3_1 -> A3_1_2;
+
+    G3_2 -> A3_2_1;
+    G3_2 -> A3_2_2;
+
+    G3_3 -> A3_3_1;
+    G3_3 -> A3_3_2;
+}

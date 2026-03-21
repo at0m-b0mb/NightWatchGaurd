@@ -1,0 +1,15 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# MicroPython compiled files
+*.mpy
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+*.swp
