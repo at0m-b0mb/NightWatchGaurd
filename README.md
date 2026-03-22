@@ -80,6 +80,7 @@ NightWatchGaurd/
 
 | Document | Description |
 |----------|-------------|
+| [Developer Guide](docs/developer_guide.md) | Every file, function, input/output, cross‑file interactions, and team work assignment |
 | [Architecture](docs/architecture.md) | Data flow, trust boundaries, component details |
 | [Assets](docs/assets.md) | Asset list A1–A5 with threat‑modelling rationale |
 | [Attack Tree](docs/attack_tree.md) | Text attack tree rooted at misdiagnosis (G0) |
