@@ -86,11 +86,10 @@ try:
     )
     _LIMITER_AVAILABLE = True
     print("[SOMNI][SECURITY] Flask-Limiter initialised.")
-except ImportError:
+except Exception as _limiter_exc:
     limiter = None
     _LIMITER_AVAILABLE = False
-    print("[SOMNI][SECURITY] Flask-Limiter not installed; "
-          "rate limiting disabled.")
+    print("[SOMNI][SECURITY] Flask-Limiter disabled: {}".format(_limiter_exc))
 
 # ---------------------------------------------------------------------------
 # Security middleware — import helpers
@@ -103,10 +102,9 @@ try:
     )
     _SECURITY_MODULE = True
     print("[SOMNI][SECURITY] Security module loaded.")
-except ImportError:
+except Exception as _sec_exc:
     _SECURITY_MODULE = False
-    print("[SOMNI][SECURITY] security.py not found; "
-          "basic security headers only.")
+    print("[SOMNI][SECURITY] Security module disabled: {}".format(_sec_exc))
 
     # Fallback stubs
     def add_security_headers(response):
@@ -151,28 +149,31 @@ except ImportError:
 # Audit logging — import helpers
 # ---------------------------------------------------------------------------
 
+class _StubAudit:
+    """No-op audit logger used when audit.py fails to load."""
+    def log_login_attempt(self, *a, **kw): pass
+    def log_login_lockout(self, *a, **kw): pass
+    def log_logout(self, *a, **kw): pass
+    def log_data_access(self, *a, **kw): pass
+    def log_api_access(self, *a, **kw): pass
+    def log_report_generated(self, *a, **kw): pass
+    def log_report_downloaded(self, *a, **kw): pass
+    def log_user_created(self, *a, **kw): pass
+    def log_user_deleted(self, *a, **kw): pass
+    def log_security_event(self, *a, **kw): pass
+
+audit_log = _StubAudit()  # safe default — overwritten below on success
+
 try:
-    from audit import audit_log, init_audit_log
-    init_audit_log()
+    from audit import init_audit_log as _init_audit
+    _result = _init_audit()
+    if _result is not None:
+        audit_log = _result
     _AUDIT_AVAILABLE = True
     print("[SOMNI][AUDIT] Audit logging initialised.")
-except ImportError:
+except Exception as _audit_exc:
     _AUDIT_AVAILABLE = False
-    print("[SOMNI][AUDIT] audit.py not found; audit logging disabled.")
-
-    class _StubAudit:
-        def log_login_attempt(self, *a, **kw): pass
-        def log_login_lockout(self, *a, **kw): pass
-        def log_logout(self, *a, **kw): pass
-        def log_data_access(self, *a, **kw): pass
-        def log_api_access(self, *a, **kw): pass
-        def log_report_generated(self, *a, **kw): pass
-        def log_report_downloaded(self, *a, **kw): pass
-        def log_user_created(self, *a, **kw): pass
-        def log_user_deleted(self, *a, **kw): pass
-        def log_security_event(self, *a, **kw): pass
-
-    audit_log = _StubAudit()
+    print("[SOMNI][AUDIT] Audit logging disabled: {}".format(_audit_exc))
 
 
 # ---------------------------------------------------------------------------
