@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ patient.name }} — SOMNI‑Guard{% endblock %}
+{% block content %}
+<h1>🧑‍⚕️ {{ patient.name }}</h1>
+
+<div class="card">
+  <h2>Patient Details</h2>
+  <table style="width:auto;">
+    <tr><th>Date of Birth</th><td>{{ patient.dob or '—' }}</td></tr>
+    <tr><th>Notes</th><td>{{ patient.notes or '—' }}</td></tr>
+    <tr><th>Record Created</th><td>{{ patient.created_at }}</td></tr>
+  </table>
+  <p style="margin-top:.75rem;">
+    <a class="btn btn-secondary btn-sm" href="{{ url_for('patients') }}">← Back to Patients</a>
+  </p>
+</div>
+
+<div class="card">
+  <h2>Sleep Sessions ({{ sessions | length }})</h2>
+  {% if sessions %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Device</th>
+        <th>Started</th>
+        <th>Ended</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td>{{ s.device_id }}</td>
+        <td>{{ s.started_at }}</td>
+        <td>{{ s.ended_at or '⏳ ongoing' }}</td>
+        <td>
+          <a class="btn btn-primary btn-sm" href="{{ url_for('session_detail', session_id=s.id) }}">View Session</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No sessions recorded for this patient yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

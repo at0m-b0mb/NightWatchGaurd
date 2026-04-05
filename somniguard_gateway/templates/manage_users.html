@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Manage Users — SOMNI‑Guard{% endblock %}
+{% block content %}
+<h1>👤 Manage Users</h1>
+
+<div class="card">
+  <h2>Create New User</h2>
+  <form method="post" action="{{ url_for('create_user') }}" novalidate>
+    {{ form.hidden_tag() }}
+    <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:.75rem; align-items:end;">
+      <div class="form-group" style="margin:0;">
+        {{ form.username.label }}
+        {{ form.username(placeholder="username") }}
+      </div>
+      <div class="form-group" style="margin:0;">
+        {{ form.email.label }}
+        {{ form.email(placeholder="user@example.com") }}
+      </div>
+      <div class="form-group" style="margin:0;">
+        {{ form.password.label }}
+        {{ form.password(placeholder="min 8 chars") }}
+      </div>
+      <div class="form-group" style="margin:0;">
+        {{ form.role.label }}
+        {{ form.role() }}
+      </div>
+    </div>
+    <button type="submit" class="btn btn-success" style="margin-top:.75rem;">Create User</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All Users ({{ users | length }})</h2>
+  {% if users %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Created</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ u.username }}</td>
+        <td>{{ u.email }}</td>
+        <td>
+          <span class="badge {% if u.role == 'admin' %}badge-admin{% else %}badge-clini{% endif %}">
+            {{ u.role }}
+          </span>
+        </td>
+        <td class="muted">{{ u.created_at }}</td>
+        <td>
+          {% if u.id != current_user.id %}
+          <form method="post" action="{{ url_for('delete_user', user_id=u.id) }}" style="display:inline;"
+                onsubmit="return confirm('Delete user {{ u.username }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+          </form>
+          {% else %}
+          <span class="muted">(you)</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No users found.</p>
+  {% endif %}
+</div>
+{% endblock %}

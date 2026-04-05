@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — SOMNI‑Guard{% endblock %}
+{% block content %}
+<h1>📊 Dashboard</h1>
+
+<div class="stat-grid">
+  <div class="stat-box">
+    <div class="val">{{ patients | length }}</div>
+    <div class="lbl">Patients</div>
+  </div>
+  <div class="stat-box">
+    <div class="val">{{ sessions | length }}</div>
+    <div class="lbl">Total Sessions</div>
+  </div>
+  <div class="stat-box">
+    <div class="val">
+      {{ sessions | selectattr('ended_at', 'none') | list | length }}
+    </div>
+    <div class="lbl">Active Sessions</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recent Sleep Sessions</h2>
+  {% if sessions %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Patient</th>
+        <th>Device</th>
+        <th>Started</th>
+        <th>Ended</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions[:30] %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td><a href="{{ url_for('patient_detail', patient_id=s.patient_id) }}">{{ s.patient_name }}</a></td>
+        <td>{{ s.device_id }}</td>
+        <td>{{ s.started_at }}</td>
+        <td>{{ s.ended_at or '⏳ ongoing' }}</td>
+        <td>
+          <a class="btn btn-primary btn-sm" href="{{ url_for('session_detail', session_id=s.id) }}">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No sessions yet. The Pico device will create sessions automatically when it connects.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Quick Links</h2>
+  <a class="btn btn-primary" href="{{ url_for('patients') }}">Manage Patients</a>
+  {% if current_user.role == 'admin' %}
+  <a class="btn btn-secondary" href="{{ url_for('manage_users') }}" style="margin-left:.5rem;">Manage Users</a>
+  {% endif %}
+</div>
+{% endblock %}
