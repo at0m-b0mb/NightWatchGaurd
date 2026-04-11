@@ -680,7 +680,7 @@ Work through this checklist top to bottom before a full recording session.
 |---------|-------------|-----|
 | `ADXL345 check_sensor: False` | Wiring error or wrong address | Verify SDA=**GP2** (Pin 4), SCL=**GP3** (Pin 5), SDO=GND. Run the I2C1 bus scan below. |
 | `MAX30102 check_sensor: False` | Wiring error or wrong address | Verify SDA=**GP4** (Pin 6), SCL=**GP5** (Pin 7). Run the I2C0 bus scan below — should see `0x57`. |
-| SpO₂ always `None` | No finger on sensor | Place finger firmly on MAX30102 LED window. IR raw must exceed 50,000. |
+| SpO₂ always `None` / "No finger detected" | FIFO overflow bug (fixed v0.4) or no finger | Update to v0.4 driver (see MAX30102 FIFO fix below). Place finger firmly on LED window; IR raw must exceed 5 000. |
 | GSR value always `0` or very high | Electrode not in contact | Press electrodes firmly to skin; check that Grove GSR SIG wire is connected to GP26 (Pin 31). |
 | `ADXL345 I2C init failed` | GP2/GP3 wiring error | Re‑check ADXL345 SDA→GP2 and SCL→GP3. Check for short circuits. |
 | `MAX30102 I2C init failed` | GP4/GP5 wiring error | Re‑check MAX30102 SDA→GP4 and SCL→GP5. Check for short circuits. |
@@ -705,6 +705,59 @@ print("I2C1:", i2c1.scan())   # Expected: [83]
 
 If a list is empty, the sensor is not detected — re‑check the wiring for that bus.
 If an address does not match, verify the SDO wiring for ADXL345 (see table below).
+
+> **Tip:** Use the dedicated test scripts in `pico_tests/` instead of typing
+> REPL commands manually.  `test_i2c_scan.py` does the above scan for you
+> and shows friendly diagnostic messages.
+
+---
+
+### MAX30102 "No finger detected" — Detailed Fix (v0.4)
+
+**Root cause (bug in v0.3 and earlier):**
+
+The MAX30102 FIFO samples at 100 sps internally.  The main application reads
+at 1 Hz.  After 320 ms the FIFO fills its 32-sample depth and — with
+`FIFO_ROLLOVER_EN = 1` — the write pointer wraps back to the current read
+pointer position.  The old `read_fifo()` code calculated
+`num_samples = (wr_ptr - rd_ptr) & 0x1F`.  When the FIFO had overflowed,
+this computed **0**, which the code incorrectly interpreted as *"FIFO empty"*
+and returned `(None, None)`.  Every single 1 Hz read hit this path, so the
+sensor appeared to detect no finger regardless of what was placed on it.
+
+**What the v0.4 fix does:**
+
+```
+read_fifo() now reads OVF_COUNTER in addition to WR_PTR and RD_PTR.
+If OVF_COUNTER > 0, there IS data — it seeks RD_PTR to (WR_PTR - 1)
+to get the freshest sample, clears OVF_COUNTER, then reads one sample.
+```
+
+**All three changes made in v0.4:**
+
+| Setting | v0.3 (old) | v0.4 (fixed) | Reason |
+|---------|-----------|-------------|--------|
+| FIFO overflow handling | `return (None, None)` when `wr_ptr == rd_ptr` | Check `OVF_COUNTER`; seek to latest sample | Core bug fix |
+| LED current | 0x24 = 7.2 mA | 0x7F = 25.4 mA | More reliable across skin tones |
+| No-finger threshold | 50 000 | 5 000 | Prevent valid low-signal reads being misclassified |
+| Post-reset delay | 10 ms | 50 ms | Gives cheap module boards time to POR |
+
+**If "No finger detected" persists after the v0.4 fix:**
+
+1. Run `pico_tests/test_max30102.py` — it shows raw IR/Red counts and tells
+   you exactly what the sensor is seeing.
+2. Check that the red and IR LEDs glow visibly when you look at the module
+   face-on (the two small dots next to the black window).
+3. Try a higher LED current — edit `_LED_AMPLITUDE` at the top of
+   `drivers/max30102.py`:
+   ```python
+   _LED_AMPLITUDE = 0xFF   # 51 mA — maximum, for difficult cases
+   ```
+4. Shield the sensor from strong ambient light (sunlight saturates the ADC).
+5. On the module's 3-bit solder pad, confirm the bridge is on the **3V3**
+   position, not 1V8.
+
+---
 
 ### Gateway / network issues
 

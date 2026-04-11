@@ -85,12 +85,27 @@ ADC_VREF = 3.3        # volts
 ADC_FULL_SCALE = 65535
 
 # ---------------------------------------------------------------------------
+# MAX30102 LED amplitude
+# ---------------------------------------------------------------------------
+
+# LED pulse amplitude for both Red and IR LEDs on the MAX30102.
+# Each register step = 200 µA.  Increase if "No finger detected" persists.
+#   0x24 = 7.2 mA  (original — too low for some modules)
+#   0x3F = 12.6 mA (conservative sleep‑monitoring value)
+#   0x7F = 25.4 mA (recommended default — reliable for most skin tones)
+#   0xFF = 51.0 mA (maximum — use only for short diagnostic checks)
+MAX30102_LED_AMPLITUDE = 0x7F   # 25.4 mA
+
+# ---------------------------------------------------------------------------
 # SpO₂ / HR thresholds (non‑clinical, educational reference values only)
 # ---------------------------------------------------------------------------
 
 # Minimum valid raw IR value; below this the finger is likely absent.
+# Lowered from 50 000 → 5 000 (v0.4) so that valid low‑signal readings
+# (darker skin tones, light finger pressure) are not misclassified.
+# An uncovered sensor typically reads < 1 000.
 # This is an empirical threshold — NOT a clinical diagnostic limit.
-SPO2_IR_MIN_VALID = 50_000
+SPO2_IR_MIN_VALID = 5_000
 
 # Nominal SpO₂ bounds for educational plausibility checks.
 # Values outside this range are flagged but still forwarded.

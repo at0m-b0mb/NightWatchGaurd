@@ -10,6 +10,19 @@ together with a simple educational SpO₂ / HR approximation.
     are derived from a simplified R‑ratio method and are NOT suitable for
     clinical diagnosis, treatment decisions, or any safety‑critical use.
 
+Bug fix (v0.4)
+--------------
+The FIFO on the MAX30102 runs at 100 sps internally.  The sampler reads it
+at only 1 Hz, so by the time read_fifo() is called the FIFO has long since
+overflowed its 32‑sample depth and FIFO_ROLLOVER has wrapped the write
+pointer back to equal the read pointer.  The original code interpreted
+(wr_ptr == rd_ptr) as "no data", which caused every 1 Hz read to return
+(None, None) and the no‑finger message to appear.
+
+The fix reads the OVF_COUNTER register.  When overflow has occurred,
+OVF_COUNTER > 0 and we seek the read pointer to the latest unread
+sample (wr_ptr − 1) before reading, then clear OVF_COUNTER.
+
 References
 ----------
 - MAX30102 datasheet (Rev 3), Maxim Integrated.
@@ -44,19 +57,51 @@ _PART_ID_EXPECTED = 0x15
 # Number of bytes per FIFO sample in SpO₂ mode (3 bytes Red + 3 bytes IR)
 _BYTES_PER_SAMPLE = 6
 
-# Minimum IR count below which the sensor is treated as "no finger" present
-_IR_NO_FINGER_THRESHOLD = 50_000
+# ---------------------------------------------------------------------------
+# LED amplitude (pulse current) for both LEDs.
+# Each register step = 200 µA.
+#   0x24 = 7.2 mA  (original — too low for some modules / skin tones)
+#   0x3F = 12.6 mA (conservative sleep‑monitoring value)
+#   0x7F = 25.4 mA (recommended — reliable across a wide range of users)
+#   0xFF = 51.0 mA (maximum — only for very short spot‑checks)
+#
+# Increase this value if you still see "No finger detected" after the FIFO
+# fix, especially with darker skin tones or higher melanin concentration.
+# ---------------------------------------------------------------------------
+_LED_AMPLITUDE = 0x7F   # 25.4 mA — reliable for most users
+
+# Minimum IR count below which the sensor is treated as "no finger" present.
+# With the FIFO fix in place and 25 mA LED current, a covered sensor reads
+# 50 000–250 000.  An open sensor (no finger) reads < 1 000.
+# The threshold is deliberately conservative so darker skin tones are not
+# misclassified as "no finger".
+_IR_NO_FINGER_THRESHOLD = 5_000
 
 
 class MAX30102:
     """
     Driver for the MAX30102 SpO₂ and heart‑rate sensor module.
 
-    Initialises the sensor for SpO₂ mode with sensible defaults for sleep
-    monitoring (low LED current, 100 Hz internal sample rate, 16384 nA ADC
-    range, 18‑bit resolution, 411 µs pulse width).  All I2C operations are
-    wrapped in try/except; errors are logged with the ``[SOMNI][MAX30102]``
-    prefix and a safe sentinel is returned.
+    Initialises the sensor for SpO₂ mode with settings suitable for sleep
+    monitoring (25 mA LED current, 100 Hz internal sample rate, 16384 nA
+    ADC range, 18‑bit resolution, 411 µs pulse width).
+
+    v0.4 changes
+    ~~~~~~~~~~~~
+    * Fixed FIFO overflow handling in read_fifo() — the sensor samples at
+      100 sps but the sampler only reads at 1 Hz.  By the time read_fifo()
+      is called the FIFO has overflowed and the write pointer has wrapped
+      to equal the read pointer, making the old code return (None, None)
+      on every call.  The fix checks OVF_COUNTER and seeks to the latest
+      sample when overflow is detected.
+    * Increased LED amplitude from 0x24 (7.2 mA) to 0x7F (25.4 mA) for
+      more reliable readings across diverse skin tones.
+    * Lowered no‑finger threshold from 50 000 to 5 000 to avoid classifying
+      valid low‑signal readings as "no finger".
+    * Extended post‑reset delay from 10 ms to 50 ms for module stability.
+
+    All I2C operations are wrapped in try/except; errors are logged with the
+    ``[SOMNI][MAX30102]`` prefix and a safe sentinel is returned.
 
     Args:
         i2c  (machine.I2C): Configured I2C bus object.
@@ -65,16 +110,6 @@ class MAX30102:
     """
 
     def __init__(self, i2c, addr=0x57):
-        """
-        Initialise the MAX30102 and configure it for SpO₂ mode.
-
-        Args:
-            i2c  (machine.I2C): Configured I2C bus object.
-            addr (int):         Sensor I2C address.  Defaults to 0x57.
-
-        Returns:
-            None
-        """
         self._i2c  = i2c
         self._addr = addr
         self._ir_buffer  = []   # rolling IR samples for HR estimation
@@ -128,40 +163,61 @@ class MAX30102:
 
         Settings chosen for sleep monitoring:
         - SpO₂ mode (mode = 0x03).
-        - ADC range 4096 nA, sample rate 100 sps (internal), pulse width 411 µs.
-        - LED current ~7 mA (amplitude 0x24) — sufficient for skin contact.
-        - FIFO: 32‑sample average disabled (average = 1), FIFO rollover enabled.
+        - ADC range 16384 nA, sample rate 100 sps (internal), pulse width
+          411 µs (18‑bit ADC resolution).  Register value = 0x67.
+        - LED current 25.4 mA (amplitude 0x7F) — reliable across diverse
+          skin tones and finger pressures.
+        - FIFO: 1 sample per slot (no averaging), FIFO rollover enabled.
 
         Returns:
             None
         """
-        # Reset the device first
+        # Hard‑reset the device
         if not self._write_reg(_REG_MODE_CONFIG, 0x40):
             print("[SOMNI][MAX30102] Reset failed; sensor may be absent.")
             return
-        time.sleep_ms(10)
+        # 50 ms gives the module time to complete its internal POR sequence.
+        # Some cheap breakout boards need more than the datasheet minimum.
+        time.sleep_ms(50)
 
-        # FIFO configuration: SMP_AVE=1 (no averaging), FIFO_ROLLOVER_EN=1
+        # Clear any stale interrupt status flags
+        self._read_reg(_REG_INT_STATUS1)
+        self._read_reg(_REG_INT_STATUS2)
+
+        # FIFO configuration:
+        #   SMP_AVE     = 000 (no averaging, 1 sample per slot)
+        #   FIFO_ROLLOVER_EN = 1 (overwrite oldest sample on overflow)
+        #   FIFO_A_FULL = 0000
+        #   → 0b0001_0000 = 0x10
         self._write_reg(_REG_FIFO_CONFIG, 0x10)
 
-        # SpO₂ mode = 0x03
+        # SpO₂ mode = 0x03 (Red LED + IR LED, two channels in FIFO)
         self._write_reg(_REG_MODE_CONFIG, 0x03)
 
-        # SpO₂ config: ADC range=16384 nA (bits[6:5]=11), SR=100 sps (bits[4:2]=001),
-        # LED pulse width=411 µs, 18-bit ADC (bits[1:0]=11) → 0b_11_001_11 = 0x67
+        # SpO₂ ADC / sample rate / pulse width:
+        #   SPO2_ADC_RGE [6:5] = 11 → 16384 nA full‑scale
+        #   SPO2_SR      [4:2] = 001 → 100 samples/second
+        #   LED_PW       [1:0] = 11 → 411 µs pulse (18‑bit ADC)
+        #   → 0b0_11_001_11 = 0x67
         self._write_reg(_REG_SPO2_CONFIG, 0x67)
 
-        # LED amplitudes (~7 mA each; 0x24 = 36 * 200 µA = 7.2 mA)
-        self._write_reg(_REG_LED1_PA, 0x24)  # Red LED
-        self._write_reg(_REG_LED2_PA, 0x24)  # IR LED
+        # LED amplitudes — 25.4 mA (0x7F) for both Red and IR.
+        self._write_reg(_REG_LED1_PA, _LED_AMPLITUDE)   # Red LED
+        self._write_reg(_REG_LED2_PA, _LED_AMPLITUDE)   # IR LED
 
-        # Reset FIFO pointers
+        # Reset FIFO pointers and overflow counter so we start from a
+        # known state.
         self._write_reg(_REG_FIFO_WR_PTR, 0x00)
         self._write_reg(_REG_OVF_COUNTER, 0x00)
         self._write_reg(_REG_FIFO_RD_PTR, 0x00)
 
+        # Small settling delay after full configuration
+        time.sleep_ms(10)
+
         self._configured = True
-        print("[SOMNI][MAX30102] Sensor configured (SpO₂ mode).")
+        print("[SOMNI][MAX30102] Sensor configured "
+              "(SpO₂ mode, LED={:.1f}mA, 100sps, 18‑bit).".format(
+                  _LED_AMPLITUDE * 0.2))
 
     # ------------------------------------------------------------------
     # Public API
@@ -191,38 +247,67 @@ class MAX30102:
 
     def read_fifo(self):
         """
-        Read one sample from the MAX30102 FIFO.
+        Read the latest sample from the MAX30102 FIFO.
 
-        Returns the most recent IR and Red raw 18‑bit ADC counts.
-        Does not raise exceptions; returns (None, None) on any error.
+        The sensor runs its internal ADC at 100 sps continuously.  When the
+        FIFO is full (32 samples) and FIFO_ROLLOVER_EN is set, the write
+        pointer wraps back to the current read pointer position.  At that
+        moment (wr_ptr == rd_ptr) the old logic incorrectly reported zero
+        samples and returned (None, None).
+
+        This version also reads OVF_COUNTER.  When overflow has occurred,
+        OVF_COUNTER is non‑zero and we seek the read pointer to the slot
+        immediately before the write pointer (the most recent sample), clear
+        OVF_COUNTER, then perform the read.  This always returns the freshest
+        available data regardless of how long the FIFO has been running.
 
         Args:
             None
 
         Returns:
             tuple: (ir_raw: int, red_raw: int) on success,
-                   (None, None) on error or empty FIFO.
+                   (None, None) on error or genuinely empty FIFO.
         """
         try:
-            # Check how many unread samples are in the FIFO
-            wr_ptr_data = self._read_reg(_REG_FIFO_WR_PTR)
-            rd_ptr_data = self._read_reg(_REG_FIFO_RD_PTR)
-            if wr_ptr_data is None or rd_ptr_data is None:
+            # ── 1. Read all three FIFO pointer / status registers ───────────
+            wr_data  = self._read_reg(_REG_FIFO_WR_PTR)
+            rd_data  = self._read_reg(_REG_FIFO_RD_PTR)
+            ovf_data = self._read_reg(_REG_OVF_COUNTER)
+
+            if wr_data is None or rd_data is None or ovf_data is None:
                 return (None, None)
 
-            wr_ptr = wr_ptr_data[0] & 0x1F
-            rd_ptr = rd_ptr_data[0] & 0x1F
+            wr_ptr = wr_data[0]  & 0x1F
+            rd_ptr = rd_data[0]  & 0x1F
+            ovf    = ovf_data[0] & 0x1F
+
+            # Number of unread samples (5‑bit wrapping subtraction)
             num_samples = (wr_ptr - rd_ptr) & 0x1F
 
-            if num_samples == 0:
+            # ── 2. Determine whether there is data to read ──────────────────
+            # If the FIFO overflowed, OVF_COUNTER > 0 even though
+            # (wr_ptr - rd_ptr) == 0 appears to say the FIFO is empty.
+            has_data = (num_samples > 0) or (ovf > 0)
+            if not has_data:
                 return (None, None)
 
-            # Read one sample (6 bytes: 3 Red + 3 IR)
+            # ── 3. On overflow, seek to the latest available sample ─────────
+            if ovf > 0:
+                # Move read pointer to the slot just before write pointer
+                # so the very next FIFO read returns the freshest sample.
+                latest_ptr = (wr_ptr - 1) & 0x1F
+                self._write_reg(_REG_FIFO_RD_PTR, latest_ptr)
+                self._write_reg(_REG_OVF_COUNTER, 0x00)
+
+            # ── 4. Read one sample: 6 bytes (3 Red + 3 IR) ─────────────────
             raw = self._read_reg(_REG_FIFO_DATA, _BYTES_PER_SAMPLE)
             if raw is None or len(raw) < _BYTES_PER_SAMPLE:
                 return (None, None)
 
-            # Each channel is 18‑bit, MSB first, packed into 3 bytes
+            # Each channel is 18‑bit, MSB first.
+            # Byte layout per channel: [D17:D16 | D15:D8 | D7:D0]
+            # Upper 6 bits of byte 0 are always zero in 18‑bit mode.
+            # Mask 0x03 extracts bits 17:16 from byte 0.
             red_raw = ((raw[0] & 0x03) << 16) | (raw[1] << 8) | raw[2]
             ir_raw  = ((raw[3] & 0x03) << 16) | (raw[4] << 8) | raw[5]
             return (ir_raw, red_raw)
@@ -268,9 +353,13 @@ class MAX30102:
         result["ir_raw"]  = ir_raw
         result["red_raw"] = red_raw
 
-        # No‑finger detection: IR below threshold means sensor is uncovered
+        # No‑finger detection: IR below threshold means sensor is uncovered.
+        # Threshold lowered from 50 000 → 5 000 so that low‑signal but valid
+        # readings (darker skin tones, lighter finger pressure) are not
+        # incorrectly reported as "no finger".
         if ir_raw < _IR_NO_FINGER_THRESHOLD:
-            print("[SOMNI][MAX30102] No finger detected (IR={}).".format(ir_raw))
+            print("[SOMNI][MAX30102] No finger detected "
+                  "(IR={}, threshold={}).".format(ir_raw, _IR_NO_FINGER_THRESHOLD))
             return result
 
         # Accumulate rolling buffer for AC/DC estimation

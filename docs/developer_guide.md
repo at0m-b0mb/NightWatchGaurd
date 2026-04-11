@@ -2528,7 +2528,128 @@ Stored as JSON in `database.save_report()`.
 
 ---
 
-## 6. Scripts
+## 6. Sensor Test Suite — `pico_tests/`
+
+The `pico_tests/` directory contains five standalone MicroPython diagnostic
+scripts for the Raspberry Pi Pico 2 W.  They are the primary debugging tool
+for verifying hardware before running the main application.
+
+> **Always run these tests first** when setting up a new device or diagnosing
+> a sensor issue.  See [pico_tests/README.md](../pico_tests/README.md) for
+> the complete guide including wiring, usage instructions, and troubleshooting.
+
+### 6.1 `pico_tests/test_i2c_scan.py`
+
+**Run order: 1st (always start here)**
+
+Scans both I2C buses and reports every device address found.  Self-contained
+— no other project files needed on the Pico.
+
+**Tests performed:**
+- I2C bus 0 (GP4/GP5) → expects MAX30102 at 0x57
+- I2C bus 1 (GP2/GP3) → expects ADXL345 at 0x53
+
+```bash
+mpremote run pico_tests/test_i2c_scan.py
+```
+
+---
+
+### 6.2 `pico_tests/test_max30102.py`
+
+**Run order: 2nd** — diagnoses the SpO2/HR sensor in isolation.
+
+Self-contained (embeds all register definitions and I2C logic inline).
+Addresses the FIFO overflow bug that caused "No finger detected" in v0.3.
+
+**Tests performed:**
+1. I2C bus init (100 kHz)
+2. Device scan — confirm 0x57
+3. Part ID check — must read 0x15
+4. Reset + full configuration
+5. Register readback (MODE, SPO2_CONFIG, LED amplitudes)
+6. 60 live samples with IR/Red raw values and finger-detection flag
+7. Educational SpO2/HR estimate (needs ≥ 10 finger samples)
+
+**Key constants at top of file** (adjust for troubleshooting):
+
+| Constant | Default | Meaning |
+|---------|---------|---------|
+| `LED_AMP` | 0x7F | 25.4 mA LED current. Increase to 0xFF for difficult cases. |
+| `NO_FINGER_THR` | 5 000 | IR raw threshold below which "no finger" is reported. |
+| `N_SAMPLES` | 60 | Number of live samples to collect. |
+
+```bash
+mpremote run pico_tests/test_max30102.py
+```
+
+---
+
+### 6.3 `pico_tests/test_adxl345.py`
+
+**Run order: 3rd** — diagnoses the accelerometer in isolation.
+
+Self-contained.
+
+**Tests performed:**
+1. I2C bus 1 init (400 kHz)
+2. Device scan — confirm 0x53
+3. Device ID = 0xE5
+4. Configuration (50 Hz ODR, ±2g range)
+5. Register readback
+6. 30 live samples with X/Y/Z in g-units
+7. Gravity sanity: |Z| ≈ 1 g when flat (tolerance ±0.3 g)
+
+```bash
+mpremote run pico_tests/test_adxl345.py
+```
+
+---
+
+### 6.4 `pico_tests/test_gsr.py`
+
+**Run order: 4th** — diagnoses the Grove GSR v1.2 sensor.
+
+Self-contained.  Requires the metal electrodes to be attached to two fingers
+during the live-data phase for meaningful conductance readings.
+
+**Tests performed:**
+1. ADC init on GP26
+2. Single raw read (0 / 65535 = fault condition)
+3. 30 live samples: raw ADC, voltage (V), conductance (µS)
+4. Signal stability: coefficient of variation (CV) < 30% = stable
+
+```bash
+mpremote run pico_tests/test_gsr.py
+```
+
+---
+
+### 6.5 `pico_tests/test_all_sensors.py`
+
+**Run order: Last** — requires the full project on the Pico.
+
+Imports `config.py` and `drivers/` from the Pico filesystem.  Runs a 30-second
+sampling loop at 1 Hz with all three sensors simultaneously, printing one
+status line per second.  Run this after the individual tests all pass.
+
+**Files required on Pico:**
+- `config.py`
+- `drivers/__init__.py`
+- `drivers/max30102.py`
+- `drivers/adxl345.py`
+- `drivers/gsr.py`
+
+```bash
+# Upload project files, then run the combined test
+mpremote cp somniguard_pico/config.py :config.py
+mpremote cp -r somniguard_pico/drivers :drivers
+mpremote run pico_tests/test_all_sensors.py
+```
+
+---
+
+## 7. Scripts
 
 Utility scripts that live outside the main Python packages.
 

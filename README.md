@@ -149,7 +149,8 @@ cd NightWatchGaurd
 
 | Document | Description |
 |----------|-------------|
-| [Hardware Setup Guide](docs/hardware_setup.md) | **Start here** — bill of materials, pin diagrams, wiring, firmware flash, and gateway install |
+| [User Guide](docs/user_guide.md) | **Start here** — how to set up and use the software: gateway, dashboard, patients, sessions, reports |
+| [Hardware Setup Guide](docs/hardware_setup.md) | Bill of materials, pin diagrams, wiring, firmware flash, and gateway install |
 | [Developer Guide](docs/developer_guide.md) | Every file, function, input/output, cross‑file interactions, and team work assignment |
 | [Architecture](docs/architecture.md) | Data flow, trust boundaries, component details |
 | [Assets](docs/assets.md) | Asset list A1–A9 with threat‑modelling rationale |
