@@ -33,12 +33,13 @@ Educational prototype — not a clinically approved device.
 
 import config
 import utils
-from drivers import MAX30102, ADXL345
+from drivers.max30102 import MAX30102
+from drivers.adxl345  import ADXL345
 
 # GSRSensor is only imported when the hardware is enabled to avoid
 # needlessly initialising the ADC on an unconnected pin.
 if getattr(config, "GSR_ENABLED", False):
-    from drivers import GSRSensor
+    from drivers.gsr import GSRSensor
 
 # Import machine.Timer only when running on real hardware
 try:

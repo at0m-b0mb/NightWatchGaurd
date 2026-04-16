@@ -14,8 +14,8 @@ if upgrading from the Pico's built‑in ADC:
 Educational prototype — not a clinically approved device.
 """
 
-from .max30102 import MAX30102
-from .adxl345  import ADXL345
-from .gsr      import GSRSensor
+from drivers.max30102 import MAX30102
+from drivers.adxl345  import ADXL345
+from drivers.gsr      import GSRSensor
 
 __all__ = ["MAX30102", "ADXL345", "GSRSensor"]
