@@ -291,7 +291,7 @@ def main():
     global _led, _wdt
 
     print("[SOMNI] ================================================")
-    print("[SOMNI] SOMNI-Guard v0.3 — Educational Sleep Monitor")
+    print("[SOMNI] SOMNI-Guard v0.4 — Educational Sleep Monitor")
     print("[SOMNI] NOT a clinically approved device.")
     print("[SOMNI] ================================================")
 

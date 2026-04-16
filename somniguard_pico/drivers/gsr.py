@@ -75,6 +75,21 @@ class GSRSensor:
     # Public API
     # ------------------------------------------------------------------
 
+    def check_sensor(self):
+        """
+        Report whether the ADC initialised successfully.
+
+        Provides a public interface so callers (e.g. SensorSampler) can check
+        GSR availability without accessing the private ``_adc`` attribute.
+
+        Args:
+            None
+
+        Returns:
+            bool: True if the ADC initialised without error, False otherwise.
+        """
+        return self._adc is not None
+
     def read_raw(self):
         """
         Read the raw 16‑bit ADC value (0–65535).

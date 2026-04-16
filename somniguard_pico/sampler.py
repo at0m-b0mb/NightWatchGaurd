@@ -131,7 +131,7 @@ class SensorSampler:
         results = {
             "max30102": self._max30102.check_sensor(),
             "adxl345":  self._adxl345.check_sensor(),
-            "gsr":      (self._gsr._adc is not None) if self._gsr is not None else None,
+            "gsr":      self._gsr.check_sensor() if self._gsr is not None else None,
         }
         print(
             "[SOMNI][SAMPLER] Sensor check — "

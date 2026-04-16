@@ -41,6 +41,19 @@ import hashlib
 import sys
 
 # ---------------------------------------------------------------------------
+# Fake module class used to register decrypted modules in sys.modules
+# ---------------------------------------------------------------------------
+
+class _FakeModule:
+    """Lightweight namespace object that acts as a MicroPython module.
+
+    Used so that standard ``import X`` statements inside encrypted modules
+    (executed via exec()) can find previously-loaded modules in sys.modules
+    without requiring real ``.py`` files on the filesystem.
+    """
+    pass
+
+# ---------------------------------------------------------------------------
 # Compatibility shim — MicroPython vs CPython
 # ---------------------------------------------------------------------------
 
@@ -120,6 +133,58 @@ def _wipe_bytes(ba):
     if isinstance(ba, bytearray):
         for i in range(len(ba)):
             ba[i] = 0
+
+
+def _register_in_sys_modules(name, mod_dict):
+    """Register a decrypted module in sys.modules under its dotted name.
+
+    This is the critical step that allows standard ``import X`` statements
+    inside encrypted modules (executed via exec()) to find already-loaded
+    modules without needing ``.py`` files on the filesystem.
+
+    For example, after ``config.enc`` is decrypted and registered, a later
+    encrypted ``sampler.enc`` that contains ``import config`` at its top
+    level will find ``config`` in sys.modules rather than trying (and
+    failing) to open ``config.py`` from flash.
+
+    For sub-packages (e.g. ``drivers/max30102``), the parent package
+    (``drivers``) is created in sys.modules if it does not already exist,
+    and the sub-module is set as an attribute on it so that
+    ``from drivers import MAX30102`` also works.
+
+    Args:
+        name     (str):  Module name as used by import_encrypted()
+                         (e.g. ``"config"``, ``"drivers/max30102"``).
+        mod_dict (dict): Namespace dict produced by exec() of the decrypted
+                         source.
+    """
+    dotted_name = name.replace("/", ".")
+
+    # Build a lightweight module-like object from the namespace dict.
+    mod_obj = _FakeModule()
+    for k, v in mod_dict.items():
+        setattr(mod_obj, k, v)
+
+    # Register under the fully-qualified dotted name.
+    sys.modules[dotted_name] = mod_obj
+
+    # Also register under the simple leaf name so that
+    # ``import config`` works even from inside a sub-package.
+    leaf = dotted_name.split(".")[-1]
+    if leaf != dotted_name and leaf not in sys.modules:
+        sys.modules[leaf] = mod_obj
+
+    # For sub-packages (e.g. ``drivers.max30102``), ensure the parent
+    # package entry exists and has the sub-module as an attribute.
+    parts = dotted_name.split(".")
+    if len(parts) > 1:
+        parent_name = ".".join(parts[:-1])
+        if parent_name not in sys.modules:
+            parent_obj = _FakeModule()
+            sys.modules[parent_name] = parent_obj
+        setattr(sys.modules[parent_name], parts[-1], mod_obj)
+
+    print(_LOG_PREFIX, "Registered '{}' in sys.modules.".format(dotted_name))
 
 
 # ---------------------------------------------------------------------------
@@ -260,12 +325,18 @@ def import_encrypted(name, target_globals=None):
         print(_LOG_PREFIX, "Falling back to plaintext '{}'.".format(py_path))
 
     if source is not None:
-        # Compile and execute the decrypted source
+        # Compile and execute the decrypted source.
+        # Pre-populate the module namespace with already-cached modules so
+        # that top-level ``import X`` statements inside the decrypted source
+        # can resolve without needing plaintext .py files on the filesystem.
         display_name = name.replace("/", ".") + ".py"
         code = compile(source, display_name, "exec")
         mod_dict = {"__name__": name.replace("/", ".")}
         exec(code, mod_dict)
         _module_cache[name] = mod_dict
+        # Register in sys.modules so subsequent encrypted modules can find
+        # this module via standard 'import X' without needing .py files.
+        _register_in_sys_modules(name, mod_dict)
         if target_globals is not None:
             target_globals.update(mod_dict)
         print(_LOG_PREFIX, "Loaded encrypted module '{}'.".format(name))
@@ -283,6 +354,8 @@ def import_encrypted(name, target_globals=None):
         mod_dict = {k: getattr(mod, k) for k in dir(mod) if not k.startswith("_")}
         mod_dict["__name__"] = dotted_name
         _module_cache[name] = mod_dict
+        # Register in sys.modules for consistency with encrypted path.
+        _register_in_sys_modules(name, mod_dict)
         if target_globals is not None:
             target_globals.update(mod_dict)
         print(_LOG_PREFIX, "Loaded plaintext module '{}' (dev mode).".format(

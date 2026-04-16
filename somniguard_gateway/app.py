@@ -180,11 +180,27 @@ except Exception as _audit_exc:
 # Anti-replay state for API packets
 # ---------------------------------------------------------------------------
 
-# High-water mark for sequence numbers per device session
+# High-water mark for sequence numbers per device session.
+# Keyed by session_id (int).  Entries are removed when a session ends.
 _nonce_hwm = {}   # {session_id: highest_seen_nonce}
+
+# Maximum number of concurrent sessions tracked in _nonce_hwm.
+# If this limit is exceeded the oldest entry is evicted to prevent
+# unbounded memory growth on a long-running gateway.
+_NONCE_HWM_MAX_SESSIONS = 1000
 
 # Timestamp staleness window (seconds) — reject packets older than this
 _TIMESTAMP_WINDOW_S = 300   # 5 minutes
+
+
+def _nonce_hwm_set(session_id, nonce):
+    """Update the nonce high-water mark for a session, evicting stale entries if needed."""
+    if session_id not in _nonce_hwm and len(_nonce_hwm) >= _NONCE_HWM_MAX_SESSIONS:
+        # Evict the oldest tracked session to prevent unbounded memory growth.
+        # dict.keys() preserves insertion order in Python 3.7+.
+        oldest = next(iter(_nonce_hwm))
+        del _nonce_hwm[oldest]
+    _nonce_hwm[session_id] = nonce
 
 
 # ---------------------------------------------------------------------------
@@ -568,7 +584,21 @@ def download_report(session_id):
         return redirect(url_for("session_detail", session_id=session_id))
 
     pdf_path = report["pdf_path"]
-    if not os.path.isfile(pdf_path):
+    # Validate path is within REPORT_DIR to prevent path traversal attacks.
+    # An attacker who could write to the reports table might otherwise inject
+    # an arbitrary path and read sensitive files from the Pi 5 filesystem.
+    report_dir_real = os.path.realpath(cfg.REPORT_DIR)
+    pdf_path_real   = os.path.realpath(pdf_path)
+    if not pdf_path_real.startswith(report_dir_real + os.sep):
+        if _AUDIT_AVAILABLE:
+            audit_log.log_security_event(
+                "PATH_TRAVERSAL_ATTEMPT",
+                request.remote_addr,
+                {"session_id": session_id, "path": pdf_path},
+            )
+        flash("Invalid report path.", "danger")
+        return redirect(url_for("session_detail", session_id=session_id))
+    if not os.path.isfile(pdf_path_real):
         flash("Report file missing on disk.", "danger")
         return redirect(url_for("session_detail", session_id=session_id))
 
@@ -578,7 +608,7 @@ def download_report(session_id):
         )
 
     return send_file(
-        pdf_path,
+        pdf_path_real,
         as_attachment=True,
         download_name="somni_report_session_{}.pdf".format(session_id),
         mimetype="application/pdf",
@@ -704,7 +734,7 @@ def api_session_start():
     session_id = db.create_session(patient_id, device_id)
 
     # Initialize nonce high-water mark for this session
-    _nonce_hwm[session_id] = 0
+    _nonce_hwm_set(session_id, 0)
 
     if _AUDIT_AVAILABLE:
         audit_log.log_api_access(
@@ -765,9 +795,9 @@ def api_ingest():
                     {"session_id": session_id, "nonce": nonce},
                 )
             return jsonify({"error": "replay detected: stale nonce"}), 403
-        _nonce_hwm[session_id] = nonce
+        _nonce_hwm_set(session_id, nonce)
     elif nonce is not None:
-        _nonce_hwm[session_id] = nonce
+        _nonce_hwm_set(session_id, nonce)
 
     # Timestamp freshness check
     pkt_timestamp = body.get("timestamp")
@@ -885,9 +915,13 @@ def _verify_hmac(body):
     if not received_mac:
         return False
 
-    # Reconstruct the payload without the hmac field
+    # Reconstruct the payload without the hmac field.
+    # IMPORTANT: use separators=(',', ':') to match the Pico's _json_sorted()
+    # which produces compact JSON with no spaces.  json.dumps default separators
+    # include spaces (', ' and ': ') which would produce a different string and
+    # cause HMAC verification to always fail.
     payload = {k: v for k, v in body.items() if k != "hmac"}
-    payload_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
+    payload_bytes = json.dumps(payload, sort_keys=True, separators=(',', ':')).encode("utf-8")
 
     key = cfg.PICO_HMAC_KEY.encode("utf-8")
     expected_mac = _hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()

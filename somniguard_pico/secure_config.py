@@ -14,12 +14,15 @@ Design notes:
     providing device-binding without storing the key on disk.
   - Encrypted config is stored as JSON with base64-encoded ciphertext.
   - PKCS7 padding is applied to align plaintext to 8-byte XTEA block boundaries.
-  - CBC-like chaining is not implemented here; each block is independently encrypted
-    (ECB mode). For a production device, consider adding an IV and CBC mode.
+  - CBC mode: each block is XOR-chained with the previous ciphertext block
+    (Cipher Block Chaining).  A random 8-byte IV is prepended to the ciphertext
+    so that identical plaintexts produce different ciphertexts on every call.
+    File layout: [8-byte IV][PKCS7-padded XTEA-CBC ciphertext].
 
 MicroPython compatibility:
   - Uses only ustruct, ujson, ubinascii, uhashlib, and machine (all MicroPython built-ins).
   - Falls back to CPython equivalents (struct, json, binascii, hashlib) for local testing.
+  - Random IV generated via os.urandom(8) on both MicroPython and CPython.
 """
 
 # ---------------------------------------------------------------------------
@@ -50,6 +53,8 @@ try:
     import uhashlib as hashlib
 except ImportError:
     import hashlib
+
+import os    # os.urandom() for random IV generation (available on both MicroPython and CPython)
 
 # ---------------------------------------------------------------------------
 # Module-level constants
@@ -206,60 +211,85 @@ def _unpad(data):
 # ---------------------------------------------------------------------------
 
 def encrypt_config(config_dict):
-    """Encrypt a configuration dictionary and return the ciphertext as bytes.
+    """Encrypt a configuration dictionary and return IV + CBC ciphertext as bytes.
 
-    Serialises the dictionary to a JSON string, applies PKCS7 padding, then
-    encrypts each 8-byte block independently with XTEA using the hardware-
-    derived key.
+    Uses XTEA-CBC mode: each plaintext block is XOR-chained with the previous
+    ciphertext block before encryption (Cipher Block Chaining).  A random 8-byte
+    IV is generated for each call and prepended to the ciphertext so that
+    identical plaintexts produce different ciphertexts.
+
+    File layout: ``[8-byte random IV][PKCS7-padded XTEA-CBC ciphertext]``
 
     Args:
         config_dict (dict): Arbitrary JSON-serialisable configuration mapping.
 
     Returns:
-        bytes: XTEA-encrypted ciphertext (length is a multiple of 8).
+        bytes: IV (8 bytes) + XTEA-CBC ciphertext. Total length is 8 + N*8.
     """
-    print(_LOG_PREFIX, "Encrypting configuration dictionary ({} keys).".format(len(config_dict)))
+    print(_LOG_PREFIX, "Encrypting configuration dictionary ({} keys, CBC mode).".format(len(config_dict)))
     key = get_hardware_key()
     try:
         plaintext = json.dumps(config_dict).encode("utf-8")
         padded = _pad(plaintext)
+        iv = os.urandom(_BLOCK_SIZE)            # random 8-byte IV
         ciphertext = bytearray()
+        prev_block = iv                         # CBC chaining starts with IV
         for i in range(0, len(padded), _BLOCK_SIZE):
             block = padded[i:i + _BLOCK_SIZE]
-            ciphertext += _xtea_encrypt_block(block, key)
-        print(_LOG_PREFIX, "Encryption complete. Ciphertext length: {} bytes.".format(len(ciphertext)))
-        return bytes(ciphertext)
+            # XOR plaintext block with previous ciphertext block (CBC)
+            xored = bytes(a ^ b for a, b in zip(block, prev_block))
+            enc_block = _xtea_encrypt_block(xored, key)
+            ciphertext += enc_block
+            prev_block = enc_block              # next block chains from this one
+        result = bytes(iv) + bytes(ciphertext)
+        print(_LOG_PREFIX, "Encryption complete. Total length: {} bytes (8 IV + {} cipher).".format(
+            len(result), len(ciphertext)))
+        return result
     finally:
         wipe_bytes(key)
 
 
 def decrypt_config(encrypted_bytes):
-    """Decrypt XTEA-encrypted bytes back to a configuration dictionary.
+    """Decrypt XTEA-CBC bytes (IV + ciphertext) back to a configuration dictionary.
 
-    Decrypts each 8-byte block independently, removes PKCS7 padding, then
-    deserialises the resulting JSON string into a Python dictionary.
+    The first 8 bytes are the IV used for CBC unchaining.  Each ciphertext block
+    is decrypted then XOR-unchained with the previous ciphertext block.
 
     Args:
-        encrypted_bytes (bytes | bytearray): Ciphertext produced by encrypt_config().
+        encrypted_bytes (bytes | bytearray): Payload produced by encrypt_config()
+                                             (format: [8-byte IV][ciphertext]).
 
     Returns:
         dict: Decrypted configuration dictionary.
 
     Raises:
-        ValueError: If ciphertext length is not a multiple of 8 or padding is invalid.
+        ValueError: If payload is too short, not block-aligned, or padding is invalid.
         Exception:  If the decrypted data is not valid JSON.
     """
-    print(_LOG_PREFIX, "Decrypting configuration ({} bytes).".format(len(encrypted_bytes)))
-    if len(encrypted_bytes) % _BLOCK_SIZE != 0:
+    print(_LOG_PREFIX, "Decrypting configuration ({} bytes, CBC mode).".format(len(encrypted_bytes)))
+    if len(encrypted_bytes) < _BLOCK_SIZE * 2:
         raise ValueError(
-            "Ciphertext length must be a multiple of 8, got {}.".format(len(encrypted_bytes))
+            "Payload too short: expected at least {} bytes, got {}.".format(
+                _BLOCK_SIZE * 2, len(encrypted_bytes))
+        )
+    iv = bytes(encrypted_bytes[:_BLOCK_SIZE])
+    ciphertext = bytes(encrypted_bytes[_BLOCK_SIZE:])
+    if len(ciphertext) % _BLOCK_SIZE != 0:
+        raise ValueError(
+            "Ciphertext length must be a multiple of {}, got {}.".format(
+                _BLOCK_SIZE, len(ciphertext))
         )
     key = get_hardware_key()
     try:
         plaintext_padded = bytearray()
-        for i in range(0, len(encrypted_bytes), _BLOCK_SIZE):
-            block = encrypted_bytes[i:i + _BLOCK_SIZE]
-            plaintext_padded += _xtea_decrypt_block(block, key)
+        prev_block = iv                         # CBC unchaining starts with IV
+        for i in range(0, len(ciphertext), _BLOCK_SIZE):
+            block = ciphertext[i:i + _BLOCK_SIZE]
+            dec_block = _xtea_decrypt_block(block, key)
+            # XOR decrypted block with previous ciphertext block (CBC unchain)
+            plain_block = bytes(a ^ b for a, b in zip(dec_block, prev_block))
+            plaintext_padded += plain_block
+            prev_block = block                  # next block chains from this ciphertext block
         plaintext = _unpad(bytes(plaintext_padded))
         config_dict = json.loads(plaintext.decode("utf-8"))
         print(_LOG_PREFIX, "Decryption complete. Config keys: {}.".format(list(config_dict.keys())))

@@ -51,8 +51,10 @@ except ImportError:
 
 _LOG_PREFIX = "[SOMNI][ENCRYPT]"
 
-# Files that must remain as plaintext on the Pico (bootstrap files)
-_PLAINTEXT_FILES = {"main.py", "crypto_loader.py", "_boot.py"}
+# Files that must remain as plaintext on the Pico (bootstrap files).
+# boot.py and main.py run before encrypted modules are available, so they
+# cannot be stored as .enc files.  crypto_loader.py decrypts all others.
+_PLAINTEXT_FILES = {"main.py", "crypto_loader.py", "boot.py", "_boot.py"}
 
 # AES constants
 _AES_BLOCK_SIZE = 16

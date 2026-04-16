@@ -328,7 +328,7 @@ def generate_pdf(session_row, summary):
         disclaimer_style,
     ))
     story.append(Paragraph(
-        "Generated: {}  |  Session ID: {}  |  SOMNI‑Guard v0.2".format(
+        "Generated: {}  |  Session ID: {}  |  SOMNI‑Guard v0.4".format(
             summary.get("generated_at", ""), session_id
         ),
         ParagraphStyle("Footer", parent=normal, fontSize=7, textColor=colors.grey),

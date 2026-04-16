@@ -79,6 +79,29 @@ def _json_sorted(obj):
     return json.dumps(obj)
 
 
+def _constant_time_compare(a, b):
+    """Compare two strings in constant time to prevent timing attacks.
+
+    Plain ``a == b`` comparison on HMAC hex strings leaks information via
+    timing side-channels (short-circuit on first differing character).
+    This function always iterates over the full length of both strings,
+    so the comparison time does not reveal where a mismatch occurs.
+
+    Args:
+        a (str): First string (e.g. expected HMAC hex digest).
+        b (str): Second string (e.g. received HMAC hex digest).
+
+    Returns:
+        bool: True only if a == b and len(a) == len(b).
+    """
+    if len(a) != len(b):
+        return False
+    result = 0
+    for x, y in zip(a, b):
+        result |= ord(x) ^ ord(y)
+    return result == 0
+
+
 def _hmac_sha256(key, message):
     """
     Compute HMAC‑SHA256 using only hashlib (no hmac module required).
@@ -209,7 +232,8 @@ def verify_manifest_signature(manifest, hmac_key):
     canonical = _json_sorted(files_dict)
     expected_sig = _hmac_sha256(hmac_key, canonical)
 
-    valid = (stored_sig == expected_sig)
+    # Use constant-time comparison to prevent timing side-channel attacks.
+    valid = _constant_time_compare(stored_sig, expected_sig)
     if valid:
         print("[SOMNI][INTEGRITY] Manifest signature: VALID")
     else:

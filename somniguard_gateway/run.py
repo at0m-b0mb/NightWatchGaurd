@@ -26,6 +26,7 @@ import os
 import sys
 
 import bcrypt
+from security import validate_password_complexity
 
 # Ensure the gateway package directory is on sys.path when run directly.
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -61,10 +62,12 @@ def _bootstrap_admin():
     email    = input("Admin email [admin@localhost]: ").strip() or "admin@localhost"
 
     while True:
-        pwd = getpass.getpass("Admin password (min 8 chars): ")
-        if len(pwd) >= 8:
+        pwd = getpass.getpass("Admin password: ")
+        valid, errors = validate_password_complexity(pwd)
+        if valid:
             break
-        print("  Password must be at least 8 characters.")
+        for err in errors:
+            print("  " + err)
 
     pwd_hash = bcrypt.hashpw(pwd.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
     db.create_user(username, email, pwd_hash, role="admin")
