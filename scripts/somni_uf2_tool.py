@@ -71,11 +71,12 @@ if _MISSING:
 _LOG = "[SOMNI][UF2]"
 
 # UF2 block magic numbers (from the UF2 specification)
-_UF2_MAGIC0      = 0x0A324655   # "UF2\n"
-_UF2_MAGIC1      = 0x9E5D5157
-_UF2_MAGIC_END   = 0x0AB16F30
-_UF2_FLAG_FAMILY = 0x00002000   # familyID present flag
-_RP2350_FAMILY   = 0xe48bff59   # RP2350 absolute-address family ID
+_UF2_MAGIC0           = 0x0A324655   # "UF2\n"
+_UF2_MAGIC1           = 0x9E5D5157
+_UF2_MAGIC_END        = 0x0AB16F30
+_UF2_FLAG_NOT_FLASH   = 0x00000001   # block does not map to main flash — skip
+_UF2_FLAG_FAMILY      = 0x00002000   # familyID present in the last field
+_RP2350_FAMILY        = 0xe48bff59   # RP2350 absolute-address family ID (fallback)
 
 # Pico 2W flash layout  (RP2350, 4 MB flash)
 # These MUST match mpconfigboard.h in the custom build:
@@ -249,10 +250,20 @@ def parse_firmware_uf2(uf2_path: Path):
     """
     Parse a UF2 file → list of (addr, 256-byte data) tuples.
     Also returns the family ID found in the first block (or RP2350 default).
+
+    Pico SDK 2.x / picotool adds metadata blocks to the UF2 at addresses
+    outside the physical 4 MB flash window (e.g. 0x10FFFF00 for binary-info,
+    partition tables, or IMAGE_DEF structures).  These blocks have either:
+      • the "not main flash" flag set (bit 0), or
+      • an address outside [_FLASH_BASE, _FLASH_BASE + _FLASH_TOTAL).
+    We skip both categories so the overlap check and the combined UF2 only
+    contain blocks that actually land on the physical flash.
     """
-    raw      = uf2_path.read_bytes()
-    blocks   = []
-    family   = None
+    raw       = uf2_path.read_bytes()
+    blocks    = []
+    skipped   = 0
+    family    = None
+    flash_end = _FLASH_BASE + _FLASH_TOTAL   # 0x10400000 for 4 MB flash
 
     for off in range(0, len(raw), 512):
         blk = raw[off: off + 512]
@@ -265,7 +276,15 @@ def parse_firmware_uf2(uf2_path: Path):
             continue
         if flags & _UF2_FLAG_FAMILY and family is None:
             family = fam_or_size
+        # Skip metadata/info blocks that don't map to physical flash.
+        if (flags & _UF2_FLAG_NOT_FLASH) or not (_FLASH_BASE <= addr < flash_end):
+            skipped += 1
+            continue
         blocks.append((addr, blk[32: 32 + psize]))
+
+    if skipped:
+        print("{} Skipped {} out-of-range/metadata block(s) "
+              "(picotool binary-info or partition table).".format(_LOG, skipped))
 
     if family is None:
         family = _RP2350_FAMILY

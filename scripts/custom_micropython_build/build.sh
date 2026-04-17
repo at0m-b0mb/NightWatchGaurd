@@ -36,14 +36,37 @@ fi
 
 if ! command -v arm-none-eabi-gcc &>/dev/null; then
     echo "  ARM toolchain not found."
-    echo "  Installing arm-none-eabi-gcc via Homebrew..."
-    brew install arm-none-eabi-gcc
+    echo "  Installing gcc-arm-embedded (ARM's official toolchain with newlib)..."
+    brew install --cask gcc-arm-embedded
+    # The cask installs to /Applications/ARM/bin — add to PATH for this session.
+    export PATH="/Applications/ARM/bin:$PATH"
     if ! command -v arm-none-eabi-gcc &>/dev/null; then
         echo ""
-        echo "  Homebrew install failed or PATH not updated."
-        echo "  Download manually from:"
+        echo "  Install failed or PATH not updated."
+        echo "  Download the ARM GNU Toolchain manually from:"
         echo "    https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads"
-        echo "  Then re-run this script."
+        echo "  Choose: arm-none-eabi (bare-metal), macOS, .pkg installer."
+        echo "  Then add /Applications/ARM/bin to your PATH and re-run."
+        exit 1
+    fi
+else
+    # Homebrew's 'arm-none-eabi-gcc' formula (NOT the cask) builds GCC from
+    # source without newlib, so C standard headers (stdint.h, stdio.h, etc.)
+    # are missing and the firmware build fails.  Detect this and abort early.
+    ARM_SYSROOT="$(arm-none-eabi-gcc -print-sysroot 2>/dev/null || true)"
+    if [[ ! -f "${ARM_SYSROOT}/include/stdio.h" ]]; then
+        echo ""
+        echo "  ERROR: The arm-none-eabi-gcc on your PATH is missing newlib headers."
+        echo "  This is caused by Homebrew's 'arm-none-eabi-gcc' formula, which"
+        echo "  builds a bare GCC without the C standard library."
+        echo ""
+        echo "  Fix (run these commands, then re-run build.sh):"
+        echo "    brew uninstall arm-none-eabi-gcc"
+        echo "    brew install --cask gcc-arm-embedded"
+        echo "    export PATH=\"/Applications/ARM/bin:\$PATH\""
+        echo ""
+        echo "  Alternatively, download the ARM GNU Toolchain .pkg directly:"
+        echo "    https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads"
         exit 1
     fi
 fi

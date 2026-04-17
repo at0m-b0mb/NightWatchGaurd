@@ -102,8 +102,12 @@ The finished UF2 is also copied to the project root as
 All tools are installable via [Homebrew](https://brew.sh).
 
 ```bash
-# Install cmake and the ARM cross-compiler in one command
-brew install cmake arm-none-eabi-gcc
+# cmake — any method works
+brew install cmake
+
+# ARM toolchain — MUST use the cask, not the formula (see warning below)
+brew install --cask gcc-arm-embedded
+export PATH="/Applications/ARM/bin:$PATH"
 
 # Verify versions
 cmake --version          # needs 3.20 or later
@@ -111,8 +115,16 @@ arm-none-eabi-gcc --version
 python3 --version        # needs 3.10 or later
 ```
 
-> **Apple Silicon (M1/M2/M3):** `arm-none-eabi-gcc` from Homebrew works
-> correctly on Apple Silicon. No Rosetta 2 translation is needed.
+> **Critical — use `--cask gcc-arm-embedded`, not `arm-none-eabi-gcc`.**
+> Homebrew's `arm-none-eabi-gcc` *formula* compiles GCC without the C
+> standard library (newlib), causing `fatal error: stdint.h: No such file
+> or directory` across every source file. The `gcc-arm-embedded` *cask*
+> installs ARM's official prebuilt toolchain which includes newlib and
+> works correctly. If you already have the formula installed, remove it
+> first: `brew uninstall arm-none-eabi-gcc`.
+
+> **Apple Silicon (M1/M2/M3):** The `gcc-arm-embedded` cask ships a
+> native arm64 build. No Rosetta 2 translation is needed.
 
 ### Linux (Raspberry Pi OS / Ubuntu)
 
@@ -412,22 +424,57 @@ The `BOARD_FILES_DIR` path in `build.sh` was wrong (doubled directory
 name). This was fixed in the current version of the script. If you see
 this error, ensure you are running the latest `build.sh`.
 
+### `fatal error: stdint.h: No such file or directory` (missing newlib)
+
+This is the most common build failure on macOS. The cause is Homebrew's
+`arm-none-eabi-gcc` **formula**, which compiles GCC from source but does
+not bundle newlib (the C standard library for bare-metal ARM). Without it,
+every standard header (`stdint.h`, `stdio.h`, `stdlib.h`, etc.) is missing
+and the entire firmware build fails immediately.
+
+**Fix:**
+
+```bash
+# 1. Remove the broken Homebrew formula
+brew uninstall arm-none-eabi-gcc
+
+# 2. Install the correct toolchain (ARM's official prebuilt release, includes newlib)
+brew install --cask gcc-arm-embedded
+
+# 3. Add to PATH for this terminal session
+export PATH="/Applications/ARM/bin:$PATH"
+
+# 4. Make the PATH change permanent
+echo 'export PATH="/Applications/ARM/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+
+# 5. Confirm the correct toolchain is now active
+arm-none-eabi-gcc --version
+# Expected: arm-none-eabi-gcc 13.x.x (Arm GNU Toolchain ...)
+```
+
+Then delete the partial build directory and re-run:
+
+```bash
+rm -rf scripts/custom_micropython_build/micropython
+cd scripts && ./custom_micropython_build/build.sh
+```
+
+**Alternative:** Download the `.pkg` installer directly from ARM:
+`https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads`
+Choose the **arm-none-eabi** (bare-metal) target for macOS (Apple Silicon
+or x86_64 depending on your Mac). Run the installer — it adds
+`/Applications/ARM/bin` to your PATH automatically.
+
 ### `arm-none-eabi-gcc: command not found`
 
 ```bash
-# macOS
-brew install arm-none-eabi-gcc
+# macOS — use the cask (includes newlib), NOT the formula
+brew install --cask gcc-arm-embedded
+export PATH="/Applications/ARM/bin:$PATH"
 
 # Ubuntu / Debian
 sudo apt-get install gcc-arm-none-eabi
-```
-
-If Homebrew installs the compiler but the script still cannot find it,
-add the Homebrew bin directory to your PATH:
-
-```bash
-echo 'export PATH="/opt/homebrew/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
 ```
 
 ### `cmake: command not found`
