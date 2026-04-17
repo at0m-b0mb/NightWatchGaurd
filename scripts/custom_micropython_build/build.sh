@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# SOMNI-Guard — Custom MicroPython Build Script (macOS)
+# SOMNI-Guard — Custom MicroPython Build Script (macOS / Linux)
 # Builds a Pico 2W firmware with USB completely disabled.
 #
 # RESULT: build/SOMNI_GUARD_PICO2W/firmware.uf2
@@ -14,15 +14,26 @@ set -e   # exit on any error
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BOARD_FILES_DIR="$SCRIPT_DIR/custom_micropython_build"
+BOARD_FILES_DIR="$SCRIPT_DIR"
 MP_DIR="$SCRIPT_DIR/micropython"
 BOARD_NAME="SOMNI_GUARD_PICO2W"
 BOARD_DEST="$MP_DIR/ports/rp2/boards/$BOARD_NAME"
+
+# Detect OS
+OS="$(uname -s)"
+
+# CPU count helper (works on macOS and Linux)
+if [ "$OS" = "Darwin" ]; then
+    CPU_COUNT="$(sysctl -n hw.logicalcpu)"
+else
+    CPU_COUNT="$(nproc)"
+fi
 
 echo "=============================================="
 echo " SOMNI-Guard Custom MicroPython Build"
 echo " Target board : $BOARD_NAME"
 echo " MicroPython  : $MP_DIR"
+echo " OS           : $OS"
 echo "=============================================="
 
 # ── Step 1: Check / install dependencies ──────────────────────────────────
@@ -30,17 +41,27 @@ echo ""
 echo "[1/6] Checking dependencies..."
 
 if ! command -v cmake &>/dev/null; then
-    echo "  Installing cmake via Homebrew..."
-    brew install cmake
+    if [ "$OS" = "Darwin" ]; then
+        echo "  Installing cmake via Homebrew..."
+        brew install cmake
+    else
+        echo "  Installing cmake via apt..."
+        sudo apt-get update -qq && sudo apt-get install -y cmake
+    fi
 fi
 
 if ! command -v arm-none-eabi-gcc &>/dev/null; then
     echo "  ARM toolchain not found."
-    echo "  Installing arm-none-eabi-gcc via Homebrew..."
-    brew install arm-none-eabi-gcc
+    if [ "$OS" = "Darwin" ]; then
+        echo "  Installing arm-none-eabi-gcc via Homebrew..."
+        brew install arm-none-eabi-gcc
+    else
+        echo "  Installing gcc-arm-none-eabi via apt..."
+        sudo apt-get update -qq && sudo apt-get install -y gcc-arm-none-eabi binutils-arm-none-eabi
+    fi
     if ! command -v arm-none-eabi-gcc &>/dev/null; then
         echo ""
-        echo "  Homebrew install failed or PATH not updated."
+        echo "  Automatic install failed or PATH not updated."
         echo "  Download manually from:"
         echo "    https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads"
         echo "  Then re-run this script."
@@ -75,7 +96,7 @@ echo "  Submodules OK."
 # ── Step 4: Build mpy-cross ───────────────────────────────────────────────
 echo ""
 echo "[4/6] Building mpy-cross (MicroPython cross-compiler)..."
-make -C mpy-cross -j$(sysctl -n hw.logicalcpu)
+make -C mpy-cross -j"$CPU_COUNT"
 echo "  mpy-cross OK."
 
 # ── Step 5: Install custom board config ───────────────────────────────────
@@ -100,7 +121,7 @@ cd "$MP_DIR/ports/rp2"
 # Clean any previous build for this board
 rm -rf "build-$BOARD_NAME"
 
-make -j$(sysctl -n hw.logicalcpu) BOARD=$BOARD_NAME
+make -j"$CPU_COUNT" BOARD=$BOARD_NAME
 
 UF2="$MP_DIR/ports/rp2/build-$BOARD_NAME/firmware.uf2"
 if [ -f "$UF2" ]; then
@@ -114,8 +135,14 @@ if [ -f "$UF2" ]; then
     echo ""
     echo "FLASH INSTRUCTIONS:"
     echo "  1. Hold BOOTSEL while plugging the Pico 2W into USB."
-    echo "  2. A drive named 'RP2350' appears on your Mac."
-    echo "  3. Copy somni_guard_firmware.uf2 to that drive."
+    if [ "$OS" = "Darwin" ]; then
+        echo "  2. A drive named 'RP2350' appears on your Mac."
+        echo "  3. Copy somni_guard_firmware.uf2 to that drive."
+    else
+        echo "  2. A drive named 'RP2350' is mounted (e.g. /media/\$USER/RP2350)."
+        echo "  3. Copy somni_guard_firmware.uf2 to that mount point, e.g.:"
+        echo "       cp somni_guard_firmware.uf2 /media/\$USER/RP2350/"
+    fi
     echo "  4. The Pico reboots automatically — no USB access after that."
     echo ""
     echo "THEN deploy your encrypted files:"
