@@ -64,6 +64,9 @@ ensures these assets are protected at rest.
 Power on
    │
    ▼
+boot.py (plaintext) — USB lockdown layers applied here if usb_locked.flag present
+   │
+   ▼
 main.py (plaintext)
    │
    ├── import crypto_loader (plaintext)
@@ -77,12 +80,23 @@ main.py (plaintext)
    │      └── Return as module object
    │
    ├── crypto_loader.load_module_as_object("utils")
+   │
+   ├── crypto_loader.import_encrypted("drivers/max30102")  ← registered in sys.modules
+   ├── crypto_loader.import_encrypted("drivers/adxl345")   ← registered in sys.modules
+   ├── crypto_loader.import_encrypted("drivers/gsr")       ← registered in sys.modules
+   ├── crypto_loader.import_encrypted("drivers/__init__")  ← depends on above three
+   │
    ├── crypto_loader.load_module_as_object("transport")
-   ├── crypto_loader.import_encrypted("sampler")
+   ├── crypto_loader.import_encrypted("sampler")           ← depends on drivers being loaded
    │      └── Extract SensorSampler class
    │
    └── Normal operation begins (sampling, Wi-Fi, gateway, etc.)
 ```
+
+> **Driver load order is critical.** `sampler.enc` contains `from drivers.max30102 import MAX30102`
+> at its top level. MicroPython's `exec()` runs those imports when the module is decrypted.
+> If the driver modules are not already in `sys.modules` at that point, the import fails.
+> The load order above ensures all drivers are registered before `sampler.enc` is exec'd.
 
 ### File format
 
@@ -205,7 +219,7 @@ From the project root on your developer machine:
 ```bash
 python scripts/encrypt_pico_files.py \
     --uid e660c0d1c7921e28 \
-    --src somniguard_pico/ \
+    --src scripts/somniguard_pico/ \
     --out encrypted_deploy/
 ```
 
@@ -218,10 +232,30 @@ This will:
 
 ### Step 3: Deploy to the Pico
 
-Copy all files from `encrypted_deploy/` to the Pico filesystem:
+**Recommended — single UF2 flash (no mpremote required):**
 
 ```bash
-# Copy everything to the Pico root
+pip install cryptography littlefs-python
+
+python scripts/somni_uf2_tool.py \
+    --uid e660c0d1c7921e28 \
+    --src scripts/somniguard_pico/ \
+    --firmware somni_guard_firmware.uf2 \
+    --out somni_guard_complete.uf2
+```
+
+Hold BOOTSEL, plug USB, drag `somni_guard_complete.uf2` to the `RPI-RP2` drive.
+Firmware and encrypted files are written in a single operation.
+
+**Alternative — copy via mpremote:**
+
+```bash
+mpremote connect /dev/ttyACM0 cp -r encrypted_deploy/. :
+```
+
+Or file by file:
+
+```bash
 mpremote cp encrypted_deploy/main.py :main.py
 mpremote cp encrypted_deploy/crypto_loader.py :crypto_loader.py
 mpremote cp encrypted_deploy/_salt.bin :_salt.bin
@@ -238,11 +272,8 @@ mpremote cp encrypted_deploy/drivers/adxl345.enc :drivers/adxl345.enc
 mpremote cp encrypted_deploy/drivers/gsr.enc :drivers/gsr.enc
 ```
 
-Or use `mpremote`'s recursive copy if available:
-
-```bash
-mpremote cp -r encrypted_deploy/* :
-```
+> Ensure driver `.enc` files land in `drivers/` (not `drivers/drivers/`).
+> Verify: `mpremote exec "import os; print(os.listdir('/drivers'))"`
 
 ### Step 4: Verify
 
@@ -288,7 +319,7 @@ directly (no encryption):
 ```bash
 python scripts/encrypt_pico_files.py \
     --uid e660c0d1c7921e28 \
-    --src somniguard_pico/ \
+    --src scripts/somniguard_pico/ \
     --out dev_deploy/ \
     --dev-mode
 ```

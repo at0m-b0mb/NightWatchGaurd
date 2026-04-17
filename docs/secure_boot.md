@@ -22,6 +22,7 @@
 7. [Troubleshooting](#7-troubleshooting)
 8. [Rollback Instructions](#8-rollback-instructions)
 9. [Security Considerations](#9-security-considerations)
+10. [Pico 2W USB Lockdown via Custom Firmware](#10-pico-2w-usb-lockdown-via-custom-firmware)
 
 ---
 
@@ -703,3 +704,82 @@ broad firmware compatibility. A production medical device would require:
 
 This configuration is appropriate for a university research project demonstrating
 the *principles* of Secure Boot in an embedded health monitoring context.
+
+---
+
+## 10. Pico 2W USB Lockdown via Custom Firmware
+
+While UEFI Secure Boot protects the Pi 5 gateway, the Pico 2W sensor node
+needs its own boot-chain protection. SOMNI-Guard provides two complementary
+approaches, described here and in `docs/pico_setup_guide.md`.
+
+### 10.1 Software lockdown via boot.py (3 layers)
+
+`scripts/somniguard_pico/boot.py` runs before `main.py` on every power-on.
+When `usb_locked.flag` is present on the filesystem, it applies:
+
+| Layer | Implementation | Effect |
+|-------|----------------|--------|
+| 1 | `storage.disable_usb_drive()` | Hides USB mass-storage drive (CircuitPython only; no-op on stock MicroPython) |
+| 2 | `uos.mount(..., readonly=True)` | Remounts LittleFS2 read-only; files cannot be overwritten |
+| 3 | `sys.stdin = _NullReader()` | Replaces stdin with a null reader; `mpremote`/Thonny raw-REPL handshake stalls |
+
+Layer 3 is the most effective deterrent on stock MicroPython: `mpremote` and
+Thonny both send `Ctrl-A` to enter raw-REPL mode and wait for the banner on
+`stdout`. With stdin returning only empty bytes, the handshake never completes.
+
+Activate with:
+
+```bash
+mpremote connect /dev/ttyACM0 exec "from boot import lock_usb; lock_usb()"
+# then reset the Pico
+```
+
+### 10.2 Hardware-level USB removal via custom firmware
+
+For stronger protection, build the `SOMNI_GUARD_PICO2W` custom MicroPython
+firmware which sets `MICROPY_HW_ENABLE_USBDEV=0`, removing the TinyUSB stack
+entirely at compile time. No USB device is enumerated — there is no CDC serial
+port, no mass-storage drive, and no WebUSB endpoint.
+
+**Build (macOS):**
+
+```bash
+cd scripts/custom_micropython_build
+./build.sh          # ~5 minutes; outputs somni_guard_firmware.uf2 in project root
+```
+
+**Package with encrypted files (single-flash UF2):**
+
+```bash
+python scripts/somni_uf2_tool.py \
+    --uid YOUR_PICO_UID \
+    --src scripts/somniguard_pico/ \
+    --firmware somni_guard_firmware.uf2 \
+    --out somni_guard_complete.uf2
+```
+
+Flash `somni_guard_complete.uf2` via BOOTSEL drag-and-drop.
+
+### 10.3 Recovery — BOOTSEL escape hatch
+
+Both approaches preserve the RP2350 ROM bootloader. The ROM bootloader is
+stored in on-chip ROM, is independent of any firmware, and is not affected
+by `MICROPY_HW_ENABLE_USBDEV` or `boot.py`.
+
+To recover at any time:
+1. Hold **BOOTSEL** while connecting USB.
+2. `RPI-RP2` drive appears — full access to re-flash any UF2.
+3. All lockdown layers are bypassed because `boot.py` is never executed.
+
+### 10.4 Comparison
+
+| Approach | USB drive visible | REPL accessible | mpremote works | Requires rebuild |
+|----------|------------------|-----------------|----------------|-----------------|
+| No lockdown (stock) | Yes | Yes | Yes | No |
+| `boot.py` lockdown | Yes (read-only) | No (stdin blocked) | No | No |
+| Custom firmware | No | No | No | Yes (~5 min) |
+
+For an educational prototype, the `boot.py` lockdown plus AES-256-CBC
+encrypted firmware provides strong practical protection. The custom firmware
+build is the maximum-security option.

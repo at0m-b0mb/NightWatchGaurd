@@ -1,207 +1,206 @@
 """
-boot.py — SOMNI-Guard secure boot configuration for Raspberry Pi Pico 2W (RP2350).
+boot.py — SOMNI-Guard secure boot for Raspberry Pi Pico 2W (RP2350).
 
-MicroPython executes boot.py before main.py on every power-on or reset.
-This script handles:
+Runs before main.py on every power-on or reset.
 
-  1. USB mass-storage lockdown  — prevents the Pico from appearing as a USB
-     drive after initial setup so adversaries cannot browse or replace files
-     even with physical access.
-  2. Filesystem read-only mount — additional layer against unauthorised write
-     access via the USB port.
-  3. BOOTSEL bypass            — if the BOOTSEL button is held at boot, USB
-     access is temporarily re-enabled so the operator can perform maintenance
-     (e.g. flash new firmware or update the encrypted .enc files).
+SECURITY LAYERS (best-effort on stock MicroPython)
+---------------------------------------------------
+1. stdin blocked   — mpremote / Thonny rely on the USB-CDC REPL to send
+                     commands.  Replacing sys.stdin with a null reader
+                     makes the raw-REPL handshake hang so tools cannot
+                     execute arbitrary code or read files.
+2. Filesystem RO   — The LittleFS partition is remounted read-only so
+                     any tool that does get past layer 1 cannot overwrite
+                     or inject files.
+3. storage API     — If a CircuitPython-compatible build is present,
+                     storage.disable_usb_drive() hides the drive entirely.
 
-USB LOCKDOWN — how it works
----------------------------
-pico-ducky (CircuitPython) uses ``storage.disable_usb_drive()``.
-This project uses **MicroPython**, which does not include that CircuitPython
-API by default.  The approach here therefore uses two complementary layers:
+NOTE ON STOCK MICROPYTHON
+--------------------------
+Standard MicroPython for RP2350 cannot remove the USB-CDC interface at
+runtime — that requires a custom build (MICROPY_HW_USB_MSC=0) or the
+RP2350 OTP fuses.  For this educational prototype the AES-256-CBC
+encryption is the primary security layer; USB lockdown is a secondary
+deterrent.
 
-  Layer 1 — "disable_usb_drive" via usb_hid / usb_cdc (if the MicroPython
-            build includes the adafruit_hid / usb_cdc modules):
-              import storage; storage.disable_usb_drive()
+ESCAPE HATCH
+------------
+Hold BOOTSEL while plugging in USB → enters RP2350 ROM bootloader,
+bypasses boot.py entirely, and restores full USB access.
 
-  Layer 2 — Filesystem remounted as read-only via os.mount().  Even if the
-            USB mass-storage interface remains visible, all write attempts
-            will be rejected by the filesystem layer, protecting the
-            encrypted .enc files from being overwritten.
+ACTIVATING LOCKDOWN
+-------------------
+After deploying all encrypted files, run ONCE from the REPL:
 
-  NOTE: For *complete* USB mass-storage removal (no drive appears at all),
-        you need one of:
-          a) CircuitPython firmware (which has the storage API).
-          b) A custom MicroPython build compiled with
-             MICROPY_HW_USB_MSC=0.
-          c) The RP2350 OTP to permanently disable the USB boot interface.
-        This boot.py achieves the best possible protection with stock
-        MicroPython firmware.
+    mpremote connect /dev/cu.usbmodem2101 exec \
+        "from boot import lock_usb; lock_usb()"
 
-To re-enable USB access for maintenance:
-  → Hold the BOOTSEL button while connecting USB to the computer.
-  → The RP2350 will enter its ROM bootloader (BOOTSEL mode), which bypasses
-    boot.py entirely — USB mass-storage access is restored.
-  → You can then delete ``usb_locked.flag`` and reflash as needed.
-
-To activate lockdown (run once after initial setup is complete):
-  >>> from boot import lock_usb; lock_usb()
+Then reboot.  From that point on boot.py will apply the lockdown.
 
 Educational prototype — not a clinically approved device.
 """
 
 import os
+import sys
 
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-
-_USB_LOCK_FLAG  = "usb_locked.flag"
-_LOG            = "[SOMNI][BOOT]"
+_FLAG   = "usb_locked.flag"
+_LOG    = "[SOMNI][BOOT]"
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _is_usb_locked():
-    """Return True if the USB lockdown flag file is present."""
+def _flag_exists():
     try:
-        os.stat(_USB_LOCK_FLAG)
+        os.stat(_FLAG)
         return True
     except OSError:
         return False
 
 
-def _bootsel_pressed():
-    """Return True if the BOOTSEL button is currently held down.
-
-    On the RP2350, rp2.bootsel_button() reads the BOOTSEL GPIO without
-    disturbing the boot process.  Returns False if the rp2 module is not
-    available (e.g. running on CPython for testing).
-    """
+def _bootsel_held():
+    """True if the BOOTSEL button is held at power-on."""
     try:
         import rp2
-        return rp2.bootsel_button() == 1
+        return bool(rp2.bootsel_button())
     except (ImportError, AttributeError):
         return False
 
 
-def _try_disable_usb_drive():
-    """Best-effort attempt to disable USB mass-storage.
+# ---------------------------------------------------------------------------
+# Lockdown layers
+# ---------------------------------------------------------------------------
 
-    Tries the CircuitPython ``storage`` API first (works if the board runs
-    CircuitPython or a MicroPython build that includes it).  Falls back to
-    a read-only remount of the filesystem which prevents write access even
-    if the drive remains visible.
+def _block_repl():
+    """Replace sys.stdin with a null reader.
 
-    Returns:
-        str: Human-readable description of what was achieved.
+    mpremote and Thonny both open raw-REPL mode by sending Ctrl+A over
+    USB-CDC and waiting for the 'raw REPL' banner on stdout.  They then
+    stream Python source code over stdin.  Replacing stdin with a null
+    reader that always returns empty bytes causes the raw-REPL handshake
+    to stall so no commands can be injected.
     """
-    # Attempt 1: CircuitPython / adafruit_hid storage API
-    try:
-        import storage
-        storage.disable_usb_drive()
-        return "USB drive disabled via storage API (CircuitPython mode)."
-    except (ImportError, AttributeError):
-        pass
+    class _NullReader:
+        def read(self, n=-1):       return b""
+        def readinto(self, buf):
+            for i in range(len(buf)):
+                buf[i] = 0
+            return len(buf)
+        def readline(self, n=-1):   return b""
+        def write(self, buf):       return len(buf)
+        def flush(self):            pass
+        def close(self):            pass
+        def fileno(self):           return -1
 
-    # Attempt 2: MicroPython read-only remount
-    # This mounts the LittleFS partition as read-only so USB writes are
-    # rejected even if the drive is still visible.
+    sys.stdin = _NullReader()
+    print(_LOG, "REPL stdin blocked — mpremote/Thonny commands disabled.")
+
+
+def _mount_readonly():
+    """Remount the flash filesystem read-only.
+
+    Even if layer 1 is bypassed this prevents any tool from overwriting
+    the encrypted .enc files.
+    """
+    # LittleFS2 path (Pico 2W / RP2350 default)
     try:
         import uos
         uos.mount(uos.VfsLfs2(uos.Flash()), "/", readonly=True)
-        return "Filesystem remounted read-only (MicroPython fallback)."
+        print(_LOG, "Filesystem remounted read-only (LittleFS2).")
+        return
     except Exception:
         pass
 
-    # Attempt 3: Older MicroPython VFS API
+    # flashbdev path (some older MicroPython builds)
     try:
-        import uos
-        uos.mount(uos.VfsFat(uos.Flash()), "/", readonly=True)
-        return "Filesystem remounted read-only (FAT fallback)."
+        import uos, flashbdev
+        uos.mount(flashbdev.bdev, "/", readonly=True)
+        print(_LOG, "Filesystem remounted read-only (flashbdev).")
+        return
     except Exception:
         pass
 
-    return ("USB drive still visible — stock MicroPython firmware detected. "
-            "Files are protected by AES-256-CBC encryption. "
-            "For complete USB disable, use CircuitPython or a custom "
-            "MicroPython build with MICROPY_HW_USB_MSC=0.")
+    print(_LOG, "WARN: read-only remount not available on this build "
+                "— encryption is still the primary protection.")
+
+
+def _try_storage_api():
+    """Call storage.disable_usb_drive() if available (CircuitPython builds)."""
+    try:
+        import storage
+        storage.disable_usb_drive()
+        print(_LOG, "USB drive hidden via storage API.")
+    except (ImportError, AttributeError):
+        pass   # not available on stock MicroPython — silent skip
 
 
 # ---------------------------------------------------------------------------
-# Public API (callable from REPL)
+# Public API
 # ---------------------------------------------------------------------------
 
 def lock_usb():
-    """Activate USB mass-storage lockdown.
+    """Create the lockdown flag so the NEXT boot applies all security layers.
 
-    Creates the ``usb_locked.flag`` file.  On the NEXT boot, boot.py will
-    read this flag and disable USB drive access.  Run this command once after
-    all firmware files have been encrypted and deployed:
+    Run once from the REPL after all encrypted files are in place:
 
-        >>> from boot import lock_usb; lock_usb()
+        mpremote connect /dev/cu.usbmodem2101 exec \\
+            "from boot import lock_usb; lock_usb()"
 
-    To undo: hold BOOTSEL during USB connection → enter bootloader →
-    delete ``usb_locked.flag`` manually.
-
-    Returns:
-        None
+    Reboot after running this command.
+    To undo: hold BOOTSEL on power-on to reach the ROM bootloader, then
+    delete usb_locked.flag from the Pico filesystem.
     """
     try:
-        with open(_USB_LOCK_FLAG, "w") as f:
-            f.write("1")
-        print(_LOG, "USB lockdown flag created.")
-        print(_LOG, "IMPORTANT: Reboot to apply USB lockdown.")
-        print(_LOG, "           Hold BOOTSEL during reset to bypass.")
+        with open(_FLAG, "w") as f:
+            f.write("locked")
+        print(_LOG, "Lockdown flag written.")
+        print(_LOG, ">>> Reboot now to apply USB lockdown. <<<")
+        print(_LOG, "    Hold BOOTSEL on next power-on to bypass.")
     except OSError as exc:
-        print(_LOG, "ERROR: Could not create lockdown flag: {}".format(exc))
+        print(_LOG, "ERROR writing flag: {}".format(exc))
 
 
 def unlock_usb():
-    """Remove the USB lockdown flag (re-enable USB mass-storage on next boot).
-
-    Returns:
-        None
-    """
+    """Remove the lockdown flag (USB re-enabled after next reboot)."""
     try:
-        os.remove(_USB_LOCK_FLAG)
-        print(_LOG, "USB lockdown flag removed. Reboot to apply.")
+        os.remove(_FLAG)
+        print(_LOG, "Flag removed — USB unlocked after reboot.")
     except OSError:
-        print(_LOG, "No USB lockdown flag found — already unlocked.")
+        print(_LOG, "No flag found — already unlocked.")
 
 
-def usb_status():
-    """Print the current USB lockdown status.
-
-    Returns:
-        None
-    """
-    if _is_usb_locked():
-        print(_LOG, "USB lockdown: ACTIVE (usb_locked.flag present).")
-    else:
-        print(_LOG, "USB lockdown: INACTIVE (setup/maintenance mode).")
+def status():
+    """Print current lockdown state."""
+    locked = _flag_exists()
+    print(_LOG, "USB lockdown: {}".format("ACTIVE" if locked else "INACTIVE"))
 
 
 # ---------------------------------------------------------------------------
 # Boot-time execution
 # ---------------------------------------------------------------------------
 
-print(_LOG, "========================================")
+print(_LOG, "=" * 44)
 print(_LOG, "SOMNI-Guard v0.4 — Secure Boot")
-print(_LOG, "========================================")
+print(_LOG, "=" * 44)
 
-if _bootsel_pressed():
-    # Operator is holding BOOTSEL — allow USB access for maintenance.
-    print(_LOG, "BOOTSEL held — maintenance mode: USB access enabled.")
+if _bootsel_held():
+    print(_LOG, "BOOTSEL held — maintenance mode, USB open.")
     print(_LOG, "Release BOOTSEL and reset to return to secure mode.")
 
-elif _is_usb_locked():
-    print(_LOG, "USB lockdown flag detected — applying security policy.")
-    result = _try_disable_usb_drive()
-    print(_LOG, result)
+elif _flag_exists():
+    print(_LOG, "Lockdown active — applying security layers.")
+    _try_storage_api()   # layer 1 (CircuitPython only, no-op otherwise)
+    _mount_readonly()    # layer 2 (prevent file writes)
+    _block_repl()        # layer 3 (block mpremote / Thonny REPL)
+    print(_LOG, "Lockdown applied.")
 
 else:
-    print(_LOG, "Setup mode: USB access enabled.")
-    print(_LOG, "Run 'from boot import lock_usb; lock_usb()' after setup.")
+    print(_LOG, "Setup mode — USB fully open.")
+    print(_LOG, "When ready, lock the device:")
+    print(_LOG, '  mpremote exec "from boot import lock_usb; lock_usb()"')
+    print(_LOG, "Then reboot.")
 
-print(_LOG, "========================================")
+print(_LOG, "=" * 44)

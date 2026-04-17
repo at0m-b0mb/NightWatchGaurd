@@ -31,6 +31,7 @@ SOMNI‑Guard implements defence‑in‑depth security across all components:
 - **Anti‑replay protection** — Monotonic nonces and timestamps on every HMAC‑signed packet
 - **Hardware watchdog timer** — Automatic device reset on firmware hang (8‑second timeout)
 - **Secure memory wiping** — Key material zeroed after use
+- **USB lockdown (3 layers)** — `boot.py` blocks the raw‑REPL handshake (stdin null), remounts LittleFS2 read‑only, and optionally calls `storage.disable_usb_drive()`; alternatively flash the custom `SOMNI_GUARD_PICO2W` firmware that removes the TinyUSB stack entirely (`MICROPY_HW_ENABLE_USBDEV=0`)
 
 ### Gateway Security (Pi 5)
 - **UEFI Secure Boot** — Only signed kernels and bootloaders execute
@@ -53,55 +54,70 @@ SOMNI‑Guard implements defence‑in‑depth security across all components:
 
 ```
 NightWatchGaurd/
-├── somniguard_pico/          ← MicroPython firmware (Pico 2 W)
-│   ├── main.py               ← Application entry point (watchdog, integrity check)
-│   ├── crypto_loader.py      ← AES‑256‑CBC encrypted module loader
-│   ├── config.py             ← Pin constants, rates, thresholds
-│   ├── sampler.py            ← SensorSampler: timer loop & driver orchestration
-│   ├── transport.py          ← Wi‑Fi HMAC transport with anti‑replay nonces
-│   ├── utils.py              ← RingBuffer, get_timestamp, format_reading
-│   ├── integrity.py          ← SHA‑256 firmware integrity verification
-│   ├── secure_config.py      ← XTEA‑encrypted configuration storage
-│   ├── manifest.json         ← Signed firmware hash manifest
-│   └── drivers/
-│       ├── __init__.py
-│       ├── max30102.py       ← SpO₂/HR driver (educational R‑ratio approx.)
-│       ├── adxl345.py        ← Accelerometer driver (±2g, 50 Hz ODR)
-│       ├── ads1115.py        ← Optional: ADS1115 16‑bit ADC driver (upgrade path)
-│       └── gsr.py            ← Galvanic skin response driver (built‑in ADC on GP26)
-│
-├── somniguard_gateway/       ← CPython gateway (Pi 5)
-│   ├── run.py                ← Entry point with TLS support
-│   ├── app.py                ← Flask app with security middleware
-│   ├── config.py             ← Settings from environment variables
-│   ├── database.py           ← SQLite schema + connection pooling + audit log
-│   ├── reports.py            ← Feature extraction + ReportLab PDF generation
-│   ├── tailscale.py          ← Tailscale VPN integration
-│   ├── security.py           ← Rate limiting, headers, lockout, validation
-│   ├── audit.py              ← Structured audit logging with rotation
-│   ├── tls_setup.py          ← TLS certificate generation
-│   ├── templates/            ← Jinja2 HTML templates
-│   └── requirements.txt      ← Python dependencies
-│
 ├── scripts/
-│   ├── setup_secure_boot_pi5.sh     ← Pi 5 UEFI Secure Boot setup
+│   ├── somniguard_pico/              ← MicroPython firmware source (Pico 2 W)
+│   │   ├── main.py                   ← Application entry point (watchdog, integrity check)
+│   │   ├── crypto_loader.py          ← AES‑256‑CBC encrypted module loader
+│   │   ├── boot.py                   ← Secure boot: 3‑layer USB lockdown
+│   │   ├── config.py                 ← Pin constants, rates, thresholds
+│   │   ├── sampler.py                ← SensorSampler: timer loop & driver orchestration
+│   │   ├── transport.py              ← Wi‑Fi HMAC transport with anti‑replay nonces
+│   │   ├── utils.py                  ← RingBuffer, get_timestamp, format_reading
+│   │   ├── integrity.py              ← SHA‑256 firmware integrity verification
+│   │   ├── secure_config.py          ← XTEA‑encrypted configuration storage
+│   │   ├── manifest.json             ← Signed firmware hash manifest
+│   │   └── drivers/
+│   │       ├── __init__.py
+│   │       ├── max30102.py           ← SpO₂/HR driver (educational R‑ratio approx.)
+│   │       ├── adxl345.py            ← Accelerometer driver (±2g, 50 Hz ODR)
+│   │       ├── ads1115.py            ← Optional: ADS1115 16‑bit ADC driver (upgrade path)
+│   │       └── gsr.py                ← Galvanic skin response driver (built‑in ADC on GP26)
+│   │
+│   ├── somni_uf2_tool.py             ← All‑in‑one: encrypt + LittleFS2 image + UF2 packaging
+│   ├── encrypt_pico_files.py         ← AES‑256 firmware encryption tool (standalone)
 │   ├── generate_integrity_manifest.py ← Firmware hash manifest generator
-│   ├── encrypt_pico_files.py         ← AES‑256 firmware encryption tool
-│   └── setup_tailscale_pi5.sh       ← Tailscale VPN setup
+│   ├── setup_secure_boot_pi5.sh      ← Pi 5 UEFI Secure Boot setup
+│   ├── setup_tailscale_pi5.sh        ← Tailscale VPN setup
+│   └── custom_micropython_build/     ← Custom Pico 2W firmware (USB disabled at build time)
+│       ├── mpconfigboard.h           ← Board config (MICROPY_HW_ENABLE_USBDEV=0)
+│       ├── mpconfigboard.cmake       ← CMake board config (Wi‑Fi/BT enabled)
+│       └── build.sh                  ← macOS build script (clones MicroPython, builds UF2)
+│
+├── encrypted_deploy/                 ← Output of somni_uf2_tool / encrypt_pico_files
+│   ├── main.py                       ← Plaintext bootstrap
+│   ├── crypto_loader.py              ← Plaintext bootstrap
+│   ├── boot.py                       ← Plaintext boot lockdown
+│   ├── _salt.bin                     ← Random key‑derivation salt
+│   ├── *.enc                         ← AES‑256‑CBC encrypted modules
+│   └── drivers/*.enc                 ← AES‑256‑CBC encrypted driver modules
+│
+├── somniguard_gateway/               ← CPython gateway (Pi 5)
+│   ├── run.py                        ← Entry point with TLS support
+│   ├── app.py                        ← Flask app with security middleware
+│   ├── config.py                     ← Settings from environment variables
+│   ├── database.py                   ← SQLite schema + connection pooling + audit log
+│   ├── reports.py                    ← Feature extraction + ReportLab PDF generation
+│   ├── tailscale.py                  ← Tailscale VPN integration
+│   ├── security.py                   ← Rate limiting, headers, lockout, validation
+│   ├── audit.py                      ← Structured audit logging with rotation
+│   ├── tls_setup.py                  ← TLS certificate generation
+│   ├── templates/                    ← Jinja2 HTML templates
+│   └── requirements.txt              ← Python dependencies
 │
 └── docs/
-    ├── architecture.md       ← System architecture diagram & text
-    ├── assets.md             ← Asset list A1–A9
-    ├── attack_tree.md        ← Attack tree (G0–G5)
-    ├── pha.md                ← Preliminary Hazard Analysis (H‑01 – H‑09)
-    ├── security_controls.md  ← Defence‑in‑depth controls (L0–L3)
-    ├── secure_boot.md        ← Pi 5 Secure Boot guide
-    ├── encrypted_storage.md  ← Pico encrypted storage guide
-    ├── encrypted_firmware.md ← Pico AES‑256 firmware encryption guide
-    ├── security_hardening.md ← Comprehensive hardening checklist
-    ├── developer_guide.md    ← Code documentation & team assignments
-    ├── hardware_setup.md     ← BOM, wiring, installation, verification
-    └── tailscale_setup.md    ← Tailscale VPN setup guide
+    ├── architecture.md               ← System architecture diagram & text
+    ├── assets.md                     ← Asset list A1–A9
+    ├── attack_tree.md                ← Attack tree (G0–G5)
+    ├── pha.md                        ← Preliminary Hazard Analysis (H‑01 – H‑09)
+    ├── security_controls.md          ← Defence‑in‑depth controls (L0–L3)
+    ├── pico_setup_guide.md           ← Complete Pico setup, encryption & USB lockdown
+    ├── secure_boot.md                ← Pi 5 Secure Boot + Pico 2W USB lockdown guide
+    ├── encrypted_storage.md          ← Pico encrypted storage guide
+    ├── encrypted_firmware.md         ← Pico AES‑256 firmware encryption guide
+    ├── security_hardening.md         ← Comprehensive hardening checklist
+    ├── developer_guide.md            ← Code documentation & team assignments
+    ├── hardware_setup.md             ← BOM, wiring, installation, verification
+    └── tailscale_setup.md            ← Tailscale VPN setup guide
 ```
 
 ---
@@ -123,13 +139,31 @@ cd NightWatchGaurd
 | ADXL345 (Accel) | I2C @ 400 kHz | SDA=GP2, SCL=GP3 (bus 1) |
 | Grove GSR v1.2 | ADC | GP26 (ADC0, Pin 31) |
 
-### Deployment
+### Deployment (single command — recommended)
+
+```bash
+# Install dependencies
+pip install cryptography littlefs-python
+
+# Encrypt all firmware + build a single flashable UF2
+python scripts/somni_uf2_tool.py \
+    --uid YOUR_PICO_UID \
+    --src scripts/somniguard_pico/ \
+    --firmware somni_guard_firmware.uf2 \
+    --out somni_guard_complete.uf2
+```
+
+Flash `somni_guard_complete.uf2` via BOOTSEL drag‑and‑drop. Done.
+
+### Deployment (manual steps)
 
 1. Flash MicroPython (RP2350 build) onto the Pico 2 W.
-2. Copy the entire `somniguard_pico/` directory to the Pico's filesystem
-   (using Thonny, `mpremote`, or `rshell`).
-3. Reset the board — `main.py` runs automatically.
-4. Monitor USB‑serial output for `[SOMNI][DATA]` lines.
+2. Encrypt firmware: `python scripts/encrypt_pico_files.py --uid YOUR_UID --src scripts/somniguard_pico/ --out encrypted_deploy/`
+3. Copy `encrypted_deploy/` to the Pico using `mpremote cp -r encrypted_deploy/. :`
+4. Reset the board — `main.py` runs automatically.
+5. Monitor USB‑serial output for `[SOMNI][DATA]` lines.
+
+See [docs/pico_setup_guide.md](docs/pico_setup_guide.md) for the complete step‑by‑step guide.
 
 ### Sample output
 
@@ -158,7 +192,8 @@ cd NightWatchGaurd
 | [Attack Tree DOT](docs/attack_tree.dot) | Graphviz source (`dot -Tsvg` to render) |
 | [PHA](docs/pha.md) | Preliminary Hazard Analysis (9 hazards, S×L scoring) |
 | [Security Controls](docs/security_controls.md) | Defence‑in‑depth controls (L0–L3, 24 controls) |
-| [Secure Boot](docs/secure_boot.md) | Pi 5 UEFI Secure Boot setup guide |
+| [Pico Setup Guide](docs/pico_setup_guide.md) | Complete Pico 2W setup: wiring, encryption, UF2 tool, USB lockdown |
+| [Secure Boot](docs/secure_boot.md) | Pi 5 UEFI Secure Boot + Pico 2W USB lockdown via custom firmware |
 | [Encrypted Storage](docs/encrypted_storage.md) | Pico 2W encrypted configuration storage guide |
 | [Encrypted Firmware](docs/encrypted_firmware.md) | Pico 2W AES-256 encrypted firmware at-rest guide |
 | [Security Hardening](docs/security_hardening.md) | Comprehensive security hardening checklist |

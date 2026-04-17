@@ -404,14 +404,14 @@ def load_module_as_object(name):
 _ENCRYPTED_MODULES = [
     "config",
     "utils",
+    "drivers/max30102",
+    "drivers/adxl345",
+    "drivers/gsr",
+    "drivers/__init__",
     "transport",
     "sampler",
     "integrity",
     "secure_config",
-    "drivers/__init__",
-    "drivers/max30102",
-    "drivers/adxl345",
-    "drivers/gsr",
 ]
 
 

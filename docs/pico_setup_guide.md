@@ -14,13 +14,15 @@ secured, encrypted, USB-locked SOMNI-Guard sensor node.
 3. [Read Your Pico's Hardware Unique ID](#3-read-your-picos-hardware-unique-id)
 4. [Configure Credentials](#4-configure-credentials)
 5. [Deploy Plaintext (Development / First Test)](#5-deploy-plaintext-development--first-test)
-6. [Encrypt All Firmware Files](#6-encrypt-all-firmware-files)
-7. [Deploy Encrypted Firmware to the Pico](#7-deploy-encrypted-firmware-to-the-pico)
-8. [Verify Encrypted Boot](#8-verify-encrypted-boot)
-9. [USB Lockdown (Disable USB Drive Access)](#9-usb-lockdown-disable-usb-drive-access)
-10. [Raspberry Pi 5 Gateway Setup](#10-raspberry-pi-5-gateway-setup)
-11. [Connecting Pico to Gateway](#11-connecting-pico-to-gateway)
-12. [Security Reference](#12-security-reference)
+6. [One-Command UF2 Deployment (Recommended)](#6-one-command-uf2-deployment-recommended)
+7. [Manual: Encrypt All Firmware Files](#7-manual-encrypt-all-firmware-files)
+8. [Manual: Deploy Encrypted Firmware to the Pico](#8-manual-deploy-encrypted-firmware-to-the-pico)
+9. [Verify Encrypted Boot](#9-verify-encrypted-boot)
+10. [USB Lockdown (Disable USB Access)](#10-usb-lockdown-disable-usb-access)
+11. [Custom Firmware Build (Complete USB Removal)](#11-custom-firmware-build-complete-usb-removal)
+12. [Raspberry Pi 5 Gateway Setup](#12-raspberry-pi-5-gateway-setup)
+13. [Connecting Pico to Gateway](#13-connecting-pico-to-gateway)
+14. [Security Reference](#14-security-reference)
 
 ---
 
@@ -130,7 +132,7 @@ Press `Ctrl-X` to exit the REPL.
 
 Before encrypting, edit the Pico configuration with your real Wi-Fi and gateway settings.
 
-### Step 4.1 — Edit `somniguard_pico/config.py`
+### Step 4.1 — Edit `scripts/somniguard_pico/config.py`
 
 ```python
 # Wi-Fi credentials
@@ -164,7 +166,7 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 Copy the output into both:
-- `somniguard_pico/config.py` → `GATEWAY_HMAC_KEY`
+- `scripts/somniguard_pico/config.py` → `GATEWAY_HMAC_KEY`
 - The Pi 5 gateway as the `SOMNI_HMAC_KEY` environment variable
 
 ---
@@ -180,26 +182,26 @@ This lets you catch wiring or configuration mistakes before dealing with encrypt
 cd /path/to/NightWatchGaurd-main
 
 # Copy all source files to the Pico
-mpremote connect /dev/ttyACM0 cp -r somniguard_pico/. :
+mpremote connect /dev/ttyACM0 cp -r scripts/somniguard_pico/. :
 ```
 
 Or file by file:
 
 ```bash
-mpremote connect /dev/ttyACM0 cp somniguard_pico/main.py :main.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/config.py :config.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/crypto_loader.py :crypto_loader.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/boot.py :boot.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/transport.py :transport.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/sampler.py :sampler.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/utils.py :utils.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/integrity.py :integrity.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/secure_config.py :secure_config.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/main.py :main.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/config.py :config.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/crypto_loader.py :crypto_loader.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/boot.py :boot.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/transport.py :transport.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/sampler.py :sampler.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/utils.py :utils.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/integrity.py :integrity.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/secure_config.py :secure_config.py
 mpremote connect /dev/ttyACM0 mkdir :drivers
-mpremote connect /dev/ttyACM0 cp somniguard_pico/drivers/__init__.py :drivers/__init__.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/drivers/max30102.py :drivers/max30102.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/drivers/adxl345.py :drivers/adxl345.py
-mpremote connect /dev/ttyACM0 cp somniguard_pico/drivers/gsr.py :drivers/gsr.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/drivers/__init__.py :drivers/__init__.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/drivers/max30102.py :drivers/max30102.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/drivers/adxl345.py :drivers/adxl345.py
+mpremote connect /dev/ttyACM0 cp scripts/somniguard_pico/drivers/gsr.py :drivers/gsr.py
 ```
 
 ### Step 5.2 — Monitor serial output
@@ -229,104 +231,127 @@ Fix any sensor errors before proceeding to encryption.
 
 ---
 
-## 6. Encrypt All Firmware Files
+## 6. One-Command UF2 Deployment (Recommended)
 
-Once testing is complete, encrypt the firmware so that the source code and
-credentials are protected on the Pico's flash.
+`somni_uf2_tool.py` combines encryption, LittleFS2 image creation, and UF2
+packaging into a single command. The output is a single `.uf2` file you
+flash by drag-and-drop — no `mpremote` needed.
 
-### Step 6.1 — Install the encryption tool dependencies
+### Step 6.1 — Install dependencies
+
+```bash
+pip install cryptography littlefs-python
+```
+
+### Step 6.2 — Run the UF2 tool
+
+You need:
+- Your Pico's UID from Step 3 (e.g. `2effff680e87ca96`)
+- A base MicroPython UF2 for RP2350 (downloaded in Step 2), **or** the
+  custom SOMNI-Guard firmware built in [Section 11](#11-custom-firmware-build-complete-usb-removal)
+
+```bash
+cd /path/to/NightWatchGaurd-main
+
+python scripts/somni_uf2_tool.py \
+    --uid 2effff680e87ca96 \
+    --src scripts/somniguard_pico/ \
+    --firmware somni_guard_firmware.uf2 \
+    --out somni_guard_complete.uf2
+```
+
+The tool will:
+1. Derive the AES-256 key from UID + a random salt.
+2. Encrypt all `.py` source files to `.enc`.
+3. Build a LittleFS2 filesystem image containing all encrypted files.
+4. Append the filesystem image to the base firmware UF2 as additional
+   UF2 blocks targeting the correct flash address (`0x10180000`).
+5. Write `somni_guard_complete.uf2`.
+
+### Step 6.3 — Flash the UF2
+
+1. Hold **BOOTSEL** while plugging the Pico 2W into USB.
+2. A drive called `RPI-RP2` (or `RP2350`) appears.
+3. Drag `somni_guard_complete.uf2` onto the drive.
+4. The Pico reboots automatically with firmware + encrypted files both
+   written in a single flash operation.
+
+> **Tip:** After flashing, follow [Section 10](#10-usb-lockdown-disable-usb-access)
+> to activate the USB lockdown via `boot.py`, or use the custom firmware from
+> [Section 11](#11-custom-firmware-build-complete-usb-removal) for complete
+> hardware-level USB removal.
+
+---
+
+## 7. Manual: Encrypt All Firmware Files
+
+If you prefer to manage deployment manually (e.g. to update a single file
+without reflashing), use the standalone encryption tool.
+
+### Step 7.1 — Install the encryption tool dependency
 
 ```bash
 pip install cryptography
 ```
 
-### Step 6.2 — Run the encryption tool
+### Step 7.2 — Run the encryption tool
 
 ```bash
 cd /path/to/NightWatchGaurd-main
 
 python scripts/encrypt_pico_files.py \
     --uid YOUR_PICO_UID_HERE \
-    --src somniguard_pico/ \
+    --src scripts/somniguard_pico/ \
     --out encrypted_deploy/
 ```
 
 Replace `YOUR_PICO_UID_HERE` with the hex UID from Step 3 (e.g. `e660c0d1c7921e28`).
 
-Example output:
-
-```
-[SOMNI][ENCRYPT] SOMNI-Guard Firmware Encryption Tool
-[SOMNI][ENCRYPT] Source dir : somniguard_pico
-[SOMNI][ENCRYPT] Output dir : encrypted_deploy
-[SOMNI][ENCRYPT] UID        : E660C0D1C7921E28 (8 bytes)
-[SOMNI][ENCRYPT] AES lib    : cryptography
-[SOMNI][ENCRYPT] Generated new random salt (16 bytes).
-[SOMNI][ENCRYPT] AES-256 key derived (SHA-256 of UID + salt).
-[SOMNI][ENCRYPT] ENC  config.py → config.enc (3421 → 3440 bytes)
-[SOMNI][ENCRYPT] ENC  utils.py  → utils.enc  (...)
-...
-[SOMNI][ENCRYPT] COPY main.py (plaintext bootstrap)
-[SOMNI][ENCRYPT] COPY crypto_loader.py (plaintext bootstrap)
-[SOMNI][ENCRYPT] COPY boot.py (plaintext bootstrap)
-[SOMNI][ENCRYPT] Encrypted   : 11 files
-[SOMNI][ENCRYPT] Plaintext   : 3 files
-[SOMNI][ENCRYPT] Errors      : 0 files
-```
-
-The `encrypted_deploy/` directory now contains:
-- `main.py` — plaintext (no secrets)
-- `crypto_loader.py` — plaintext (no secrets)
-- `boot.py` — plaintext (no secrets)
+The `encrypted_deploy/` directory will contain:
+- `main.py`, `crypto_loader.py`, `boot.py` — plaintext (no secrets)
 - `_salt.bin` — random salt (useless without the hardware UID)
 - `config.enc`, `transport.enc`, `sampler.enc`, etc. — AES-256-CBC encrypted
+- `drivers/max30102.enc`, `drivers/adxl345.enc`, `drivers/gsr.enc`, `drivers/__init__.enc`
 
-### Step 6.3 — Keep the salt safe
-
-The `_salt.bin` file is part of the key derivation. Back it up:
+### Step 7.3 — Keep the salt safe
 
 ```bash
 cp encrypted_deploy/_salt.bin ~/somni_salt_backup.bin
 ```
 
-> Store it securely. If you lose the salt, you cannot re-derive the same key
-> and must re-encrypt everything with a new salt.
+> If you lose `_salt.bin`, you cannot re-derive the same key. Store it in a
+> password manager or secure location.
 
 ---
 
-## 7. Deploy Encrypted Firmware to the Pico
+## 8. Manual: Deploy Encrypted Firmware to the Pico
 
-### Step 7.1 — Wipe the Pico filesystem
-
-Remove the plaintext `.py` source files that were deployed during testing:
+### Step 8.1 — Wipe plaintext files from the Pico
 
 ```bash
-# Connect to REPL and delete plaintext files
 mpremote connect /dev/ttyACM0 exec "
 import os
 for f in os.listdir('/'):
     if f.endswith('.py') and f not in ('main.py', 'crypto_loader.py', 'boot.py'):
-        try:
-            os.remove(f)
-            print('Removed:', f)
-        except:
-            pass
-
-# Remove drivers directory
+        try: os.remove(f)
+        except: pass
 try:
     for f in os.listdir('/drivers'):
-        if f.endswith('.py') and f != '__init__.py':
+        if f.endswith('.py'):
             os.remove('/drivers/' + f)
-            print('Removed: drivers/' + f)
-except:
-    pass
+except: pass
 "
 ```
 
-### Step 7.2 — Copy encrypted files to the Pico
+### Step 8.2 — Copy encrypted files
 
 ```bash
-# Copy all encrypted files
+mpremote connect /dev/ttyACM0 cp -r encrypted_deploy/. :
+```
+
+Or file by file if the recursive copy is unavailable:
+
+```bash
 mpremote connect /dev/ttyACM0 cp encrypted_deploy/main.py :main.py
 mpremote connect /dev/ttyACM0 cp encrypted_deploy/crypto_loader.py :crypto_loader.py
 mpremote connect /dev/ttyACM0 cp encrypted_deploy/boot.py :boot.py
@@ -344,28 +369,17 @@ mpremote connect /dev/ttyACM0 cp encrypted_deploy/drivers/adxl345.enc :drivers/a
 mpremote connect /dev/ttyACM0 cp encrypted_deploy/drivers/gsr.enc :drivers/gsr.enc
 ```
 
-Or use the bulk recursive copy:
-
-```bash
-mpremote connect /dev/ttyACM0 cp -r encrypted_deploy/. :
-```
-
-### Step 7.3 — Verify the filesystem
-
-```bash
-mpremote connect /dev/ttyACM0 exec "
-import os
-print('Root:', os.listdir('/'))
-print('drivers:', os.listdir('/drivers'))
-"
-```
-
-You should see `.enc` files and no plaintext `.py` source files
-(only `main.py`, `crypto_loader.py`, and `boot.py` remain as plain text).
+> **Important:** copy `drivers/*.enc` into a flat `drivers/` folder on the
+> Pico root — do **not** let `mpremote` create a nested `drivers/drivers/`
+> structure. Verify with:
+> ```bash
+> mpremote connect /dev/ttyACM0 exec "import os; print(os.listdir('/drivers'))"
+> ```
+> You should see `['max30102.enc', 'adxl345.enc', 'gsr.enc', '__init__.enc']`.
 
 ---
 
-## 8. Verify Encrypted Boot
+## 9. Verify Encrypted Boot
 
 Reset the Pico and monitor the output:
 
@@ -376,54 +390,60 @@ mpremote connect /dev/ttyACM0 repl
 Press `Ctrl-D`. Expected output:
 
 ```
-[SOMNI][BOOT] ========================================
+[SOMNI][BOOT] ============================================
 [SOMNI][BOOT] SOMNI-Guard v0.4 — Secure Boot
-[SOMNI][BOOT] Setup mode: USB access enabled.
+[SOMNI][BOOT] ============================================
+[SOMNI][BOOT] Setup mode — USB fully open.
 [SOMNI] Encrypted firmware loader available.
-[SOMNI][CRYPTO] ========================================
 [SOMNI][CRYPTO] Loading encrypted firmware modules...
 [SOMNI][CRYPTO] AES engine: ucryptolib
-[SOMNI][CRYPTO] Decrypting 'config.enc'...
-[SOMNI][CRYPTO] Decrypted 'config.enc' OK (3421 bytes source).
+[SOMNI][CRYPTO] Decrypting 'config.enc'... OK
+[SOMNI][CRYPTO] Decrypting 'drivers/max30102.enc'... OK
+[SOMNI][CRYPTO] Decrypting 'drivers/adxl345.enc'... OK
+[SOMNI][CRYPTO] Decrypting 'drivers/gsr.enc'... OK
+[SOMNI][CRYPTO] Decrypting 'drivers/__init__.enc'... OK
+[SOMNI][CRYPTO] Decrypting 'sampler.enc'... OK
 ...
 [SOMNI] SOMNI-Guard v0.4 — Educational Sleep Monitor
 [SOMNI] MAX30102 I2C bus initialised (SDA=GP4, SCL=GP5, 400000Hz).
 [SOMNI][WIFI] Connecting to 'YourNetworkName'…
 [SOMNI][WIFI] Connected. IP: 192.168.1.x
-[SOMNI] Gateway session started: ID 1.
 [SOMNI] Sampling active.
 ```
 
 If you see `[SOMNI][CRYPTO] Decryption error`, double-check:
-- The UID used in Step 6.2 matches the actual device UID from Step 3.
-- The `_salt.bin` on the Pico matches the one in `encrypted_deploy/`.
+- The UID used matches the actual device UID from Step 3.
+- The `_salt.bin` on the Pico matches the one used during encryption.
+- Driver `.enc` files are in `drivers/` (not `drivers/drivers/`).
 
 ---
 
-## 9. USB Lockdown (Disable USB Drive Access)
+## 10. USB Lockdown (Disable USB Access)
 
-After confirming the encrypted firmware boots and connects to the gateway
-successfully, you can prevent anyone with physical access from browsing or
-modifying the Pico's filesystem via USB.
+After confirming the encrypted firmware boots correctly, activate the
+three-layer USB lockdown in `boot.py`.
 
 ### How it works
 
-The `boot.py` file (which runs before `main.py`) checks for a file called
-`usb_locked.flag`. When present, it attempts to:
+`boot.py` checks for a file called `usb_locked.flag` on every boot.
+When present, it applies three security layers in order:
 
-1. Call `storage.disable_usb_drive()` (CircuitPython API — removes the drive entirely)
-2. Or remount the filesystem as **read-only** (MicroPython fallback — drive is visible
-   but no file modifications are possible)
+| Layer | Mechanism | Stock MicroPython |
+|-------|-----------|-------------------|
+| 1 | `storage.disable_usb_drive()` — removes USB mass-storage device | CircuitPython only; silent no-op on stock MicroPython |
+| 2 | `uos.mount(..., readonly=True)` — remounts LittleFS2 read-only | Works; adversary sees drive but cannot write files |
+| 3 | `sys.stdin = _NullReader()` — replaces stdin with null reader, breaking the raw-REPL handshake | Works; `mpremote`/Thonny stall and cannot execute commands |
 
-Either way, the encrypted `.enc` files cannot be replaced or tampered with.
+Layer 3 (stdin blocking) is the key addition over older versions of `boot.py`.
+`mpremote` and Thonny both open *raw-REPL mode* by sending `Ctrl-A` over
+USB-CDC and waiting for the REPL banner. Replacing `sys.stdin` with a null
+reader causes the handshake to stall indefinitely, so no commands can be
+injected even if the USB-CDC port is still physically present.
 
-> **Note on stock MicroPython:** The `storage.disable_usb_drive()` API is a
-> CircuitPython feature. With stock MicroPython firmware, only the read-only
-> remount is achieved. For complete drive removal, flash **CircuitPython**
-> instead of MicroPython — see [circuitpython.org/board/raspberry_pi_pico2_w](https://circuitpython.org/board/raspberry_pi_pico2_w/).
-> CircuitPython is fully compatible with this project's Python code.
+> **For complete hardware-level USB removal** (no USB-CDC port at all), see
+> [Section 11](#11-custom-firmware-build-complete-usb-removal).
 
-### Step 9.1 — Activate USB lockdown
+### Step 10.1 — Activate USB lockdown
 
 Connect to the REPL one final time:
 
@@ -438,53 +458,129 @@ from boot import lock_usb
 lock_usb()
 ```
 
-Output:
+Expected output:
 
 ```
-[SOMNI][BOOT] USB lockdown flag created.
-[SOMNI][BOOT] IMPORTANT: Reboot to apply USB lockdown.
-[SOMNI][BOOT]            Hold BOOTSEL during reset to bypass.
+[SOMNI][BOOT] Lockdown flag written.
+[SOMNI][BOOT] >>> Reboot now to apply USB lockdown. <<<
+[SOMNI][BOOT]     Hold BOOTSEL on next power-on to bypass.
 ```
 
-### Step 9.2 — Reboot and verify
+### Step 10.2 — Reboot and verify
 
-Disconnect and reconnect the USB cable (or press the reset button).
-The Pico should **not** appear as a USB drive this time.
+Disconnect and reconnect the USB cable. On next boot `boot.py` will:
+1. Find `usb_locked.flag`
+2. Apply all three layers
+3. Print `[SOMNI][BOOT] Lockdown applied.`
 
-If it still appears, your MicroPython build does not include the `storage`
-module and the read-only remount may not have applied. See the note above.
+After lockdown, `mpremote connect` will appear to hang — that is expected
+(the raw-REPL handshake stalls). The USB-CDC port may still appear in the
+OS device list but no tool can interact with it.
 
-### Step 9.3 — Bypass for maintenance
+### Step 10.3 — Bypass for maintenance (BOOTSEL escape hatch)
 
-To re-access the Pico filesystem for firmware updates:
+The RP2350 ROM bootloader is independent of MicroPython and ignores `boot.py`:
 
-1. **Hold the BOOTSEL button**.
-2. While holding BOOTSEL, **connect USB**.
-3. The RP2350 enters its ROM bootloader — `boot.py` is not executed.
-4. The Pico appears as `RPI-RP2` drive.
-5. You can now reflash or delete `usb_locked.flag`.
+1. **Hold BOOTSEL** while connecting USB.
+2. The Pico appears as `RPI-RP2` drive — full access restored.
+3. You can reflash firmware, delete `usb_locked.flag`, or update `.enc` files.
 
-To remove the lockdown flag without reflashing:
-1. Flash MicroPython again (which wipes the filesystem).
-2. Redeploy your encrypted firmware.
-3. Do not call `lock_usb()` this time until ready.
+To remove the lockdown without reflashing:
+1. Enter BOOTSEL mode as above.
+2. Flash standard MicroPython (resets the filesystem).
+3. Redeploy your encrypted files (Section 8).
+4. Do not call `lock_usb()` until you are ready.
 
 ---
 
-## 10. Raspberry Pi 5 Gateway Setup
+## 11. Custom Firmware Build (Complete USB Removal)
 
-### Step 10.1 — Operating System
+For the strongest USB lockdown, build a custom MicroPython firmware with
+the TinyUSB stack completely removed at compile time
+(`MICROPY_HW_ENABLE_USBDEV=0`). This means the Pico never enumerates as
+any USB device — no CDC serial port, no mass-storage drive, no WebUSB.
+
+Wi-Fi, Bluetooth, and all sensors continue to work normally.
+
+### Step 11.1 — Prerequisites (macOS)
+
+The build script installs missing tools automatically via Homebrew:
+
+```bash
+# Ensure Homebrew is installed: https://brew.sh
+brew install cmake arm-none-eabi-gcc
+```
+
+Python 3 must also be available (`python3 --version`).
+
+### Step 11.2 — Run the build script
+
+```bash
+cd /path/to/NightWatchGaurd-main/scripts/custom_micropython_build
+chmod +x build.sh
+./build.sh
+```
+
+The script will:
+1. Clone MicroPython (latest stable, shallow clone) into `scripts/custom_micropython_build/micropython/`
+2. Initialise the Pico SDK, TinyUSB, mbedtls, btstack, cyw43-driver, and lwip submodules
+3. Build `mpy-cross` (the MicroPython cross-compiler)
+4. Install the `SOMNI_GUARD_PICO2W` board config from `mpconfigboard.h` and `mpconfigboard.cmake`
+5. Build the firmware (~5 minutes on a modern Mac)
+6. Copy the output to `somni_guard_firmware.uf2` in the project root
+
+### Step 11.3 — What the custom board config does
+
+`scripts/custom_micropython_build/mpconfigboard.h`:
+
+```c
+// Disables the entire TinyUSB stack — no CDC serial, no MSC drive
+#define MICROPY_HW_ENABLE_USBDEV (0)
+```
+
+`scripts/custom_micropython_build/mpconfigboard.cmake`:
+
+```cmake
+set(PICO_BOARD "pico2_w")
+set(MICROPY_PY_LWIP ON)           // Wi-Fi networking stack
+set(MICROPY_PY_NETWORK_CYW43 ON)  // CYW43439 Wi-Fi/BT driver
+set(MICROPY_PY_BLUETOOTH ON)
+```
+
+The RP2350 ROM bootloader (BOOTSEL mode) is in hardware and is **not**
+affected by this build — you can always recover by holding BOOTSEL.
+
+### Step 11.4 — Flash the custom firmware + encrypted files
+
+Use the UF2 tool from Section 6 with the custom firmware as the base:
+
+```bash
+python scripts/somni_uf2_tool.py \
+    --uid YOUR_PICO_UID \
+    --src scripts/somniguard_pico/ \
+    --firmware somni_guard_firmware.uf2 \
+    --out somni_guard_complete.uf2
+```
+
+Flash `somni_guard_complete.uf2` via BOOTSEL drag-and-drop.
+After this the Pico will never appear as a USB device under normal operation.
+
+---
+
+## 12. Raspberry Pi 5 Gateway Setup
+
+### Step 12.1 — Operating System
 
 Flash Raspberry Pi OS (64-bit, Bookworm) to your Pi 5's SD card.
 Enable SSH during imaging.
 
-### Step 10.2 — System dependencies
+### Step 12.2 — System dependencies
 
 ```bash
 sudo apt update && sudo apt install -y python3-pip python3-venv git
 ```
 
-### Step 10.3 — Clone and install
+### Step 12.3 — Clone and install
 
 ```bash
 git clone https://github.com/youruser/NightWatchGaurd.git
@@ -494,7 +590,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### Step 10.4 — Configure environment
+### Step 12.4 — Configure environment
 
 Create `/etc/somniguard/env`:
 
@@ -523,14 +619,14 @@ EOF
 sudo chmod 600 /etc/somniguard/env
 ```
 
-### Step 10.5 — Create data directories
+### Step 12.5 — Create data directories
 
 ```bash
 sudo mkdir -p /var/lib/somniguard/reports
 sudo chown -R $USER:$USER /var/lib/somniguard
 ```
 
-### Step 10.6 — First run (creates admin account)
+### Step 12.6 — First run (creates admin account)
 
 ```bash
 cd NightWatchGaurd/somniguard_gateway
@@ -542,7 +638,7 @@ python run.py
 On first run you will be prompted to create an admin account.
 The password must contain: uppercase, lowercase, digit, and special character.
 
-### Step 10.7 — Run as a systemd service
+### Step 12.7 — Run as a systemd service
 
 ```bash
 sudo tee /etc/systemd/system/somniguard.service <<'EOF'
@@ -571,26 +667,26 @@ sudo systemctl status somniguard
 
 ---
 
-## 11. Connecting Pico to Gateway
+## 13. Connecting Pico to Gateway
 
-### Step 11.1 — Find the Pi 5's IP address
+### Step 13.1 — Find the Pi 5's IP address
 
 ```bash
 hostname -I
 ```
 
-### Step 11.2 — Update Pico config
+### Step 13.2 — Update Pico config
 
-Edit `somniguard_pico/config.py`:
+Edit `scripts/somniguard_pico/config.py`:
 
 ```python
 GATEWAY_HOST = "192.168.1.100"   # Your Pi 5's IP
 GATEWAY_PORT = 5000
 ```
 
-Re-encrypt and redeploy (Section 6–7) after any config change.
+Re-encrypt and redeploy (Section 6 or Sections 7–8) after any config change.
 
-### Step 11.3 — Create a patient in the dashboard
+### Step 13.3 — Create a patient in the dashboard
 
 1. Open `https://192.168.1.100:5000` in your browser.
 2. Log in with the admin account.
@@ -598,19 +694,21 @@ Re-encrypt and redeploy (Section 6–7) after any config change.
 4. Note the patient ID (usually `1` on a fresh install).
 5. Set `GATEWAY_PATIENT_ID = 1` in `config.py`.
 
-### Step 11.4 — Start monitoring
+### Step 13.4 — Start monitoring
 
 Power on the Pico 2W. The LED will blink once per second when data is flowing.
 Check the dashboard — a new session should appear under the patient's profile.
 
 ---
 
-## 12. Security Reference
+## 14. Security Reference
 
 | Layer | Mechanism | Protection |
 |-------|-----------|------------|
 | Firmware at rest | AES-256-CBC `.enc` files (key = SHA-256(UID + salt)) | Source code & credentials unreadable without the specific Pico chip |
-| USB file access | `boot.py` lockdown + read-only remount | Adversary cannot replace or read files via USB cable |
+| USB file access (Layer 2) | `boot.py` read-only LittleFS2 remount | Files cannot be overwritten via USB |
+| USB REPL access (Layer 3) | `boot.py` stdin null-reader breaks raw-REPL handshake | `mpremote`/Thonny stall; no code can be injected |
+| USB hardware removal | Custom `SOMNI_GUARD_PICO2W` firmware (`MICROPY_HW_ENABLE_USBDEV=0`) | No USB device enumerated at all |
 | Wire transmission | HMAC-SHA256 signed JSON, anti-replay nonce + timestamp | Prevents message forgery, replay, and tampering in transit |
 | Gateway login | bcrypt (rounds=12), account lockout (10 fails → 15 min) | Brute-force and credential-stuffing resistance |
 | Gateway sessions | HTTP-only, SameSite=Lax, 30-min timeout | Session hijacking resistance |
@@ -624,10 +722,10 @@ Check the dashboard — a new session should appear under the patient's profile.
 
 To update the Wi-Fi password or HMAC key after deployment:
 
-1. Hold BOOTSEL → plug USB → Pico enters bootloader.
-2. Edit `config.py` with new credentials.
-3. Re-run `encrypt_pico_files.py` with the same `--uid` and `--salt`.
-4. Copy the new `.enc` files to the Pico via mpremote.
+1. Hold BOOTSEL → plug USB → Pico enters bootloader (bypasses `boot.py`).
+2. Edit `scripts/somniguard_pico/config.py` with new credentials.
+3. Re-run `somni_uf2_tool.py` (or `encrypt_pico_files.py`) with the same `--uid`.
+4. Flash the new UF2 or copy the new `.enc` files to the Pico.
 5. Run `lock_usb()` again when done.
 
 ### Generating fresh keys

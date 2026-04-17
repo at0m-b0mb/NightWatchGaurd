@@ -49,6 +49,13 @@ if _CRYPTO_AVAILABLE and crypto_loader.is_encryption_available():
     # Load all modules via the crypto loader (decrypts .enc files)
     config = crypto_loader.load_module_as_object("config")
     utils = crypto_loader.load_module_as_object("utils")
+    # Drivers must be in sys.modules before sampler.enc executes,
+    # because sampler does 'from drivers.max30102 import MAX30102' etc.
+    # at import time and there are no .py files on the filesystem.
+    crypto_loader.import_encrypted("drivers/max30102")
+    crypto_loader.import_encrypted("drivers/adxl345")
+    crypto_loader.import_encrypted("drivers/gsr")
+    crypto_loader.import_encrypted("drivers/__init__")
     transport = crypto_loader.load_module_as_object("transport")
     _sampler_mod = crypto_loader.import_encrypted("sampler")
     SensorSampler = _sampler_mod.get("SensorSampler")
