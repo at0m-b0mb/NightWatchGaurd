@@ -78,7 +78,8 @@ readonly EFI_MOUNT="/boot/efi"
 
 # UEFI firmware source (pftf/RPi5 project on GitHub)
 # Check https://github.com/pftf/RPi5/releases for the latest version.
-readonly UEFI_FIRMWARE_VERSION="v0.3"
+# IMPORTANT: update UEFI_FIRMWARE_VERSION to the latest release before running.
+readonly UEFI_FIRMWARE_VERSION="${SOMNI_UEFI_VERSION:-v0.4}"
 readonly UEFI_FIRMWARE_URL="https://github.com/pftf/RPi5/releases/download/${UEFI_FIRMWARE_VERSION}/RPi5_UEFI_Firmware_${UEFI_FIRMWARE_VERSION}.zip"
 readonly UEFI_TMP_DIR="/tmp/somniguard_uefi_$$"
 
@@ -260,6 +261,7 @@ check_required_tools() {
         cert-to-efi-sig-list   # efitools: convert X.509 cert → EFI sig list
         sign-efi-sig-list      # efitools: sign an EFI sig list with a key
         efi-updatevar          # efitools: write EFI variables to NVRAM
+        efi-readvar            # efitools: read EFI variables from NVRAM
 
         # Binary signing
         sbsign                 # sbsigntool: sign PE/COFF EFI binaries
@@ -268,6 +270,9 @@ check_required_tools() {
         # Boot-status queries
         mokutil                # MokManager: query/manage Secure Boot keys
         efibootmgr             # Manage EFI boot entries
+
+        # Pi 5 EEPROM management (install with: sudo apt-get install rpi-eeprom)
+        rpi-eeprom-config
 
         # Firmware download & extraction
         wget
@@ -293,7 +298,7 @@ check_required_tools() {
         error ""
         error "Install them with:"
         error "  sudo apt-get update && sudo apt-get install -y \\"
-        error "    openssl efitools sbsigntool mokutil efibootmgr wget unzip"
+        error "    openssl efitools sbsigntool mokutil efibootmgr wget unzip rpi-eeprom"
         die "Missing required tools — cannot continue."
     fi
 
@@ -435,15 +440,12 @@ sign_boot_chain() {
     step "2. Signing the boot chain"
 
     # Locate the kernel image.
-    # On Raspberry Pi OS, the EFI-compatible kernel stub is typically at:
-    #   /boot/firmware/kernel8.img  (legacy)
-    # or the UEFI path:
-    #   /boot/efi/EFI/debian/grubaa64.efi
-    #   /boot/vmlinuz  (PE kernel via CONFIG_EFI_STUB)
+    # Only PE/COFF EFI stub kernels (CONFIG_EFI_STUB=y) can be signed with sbsign.
+    # kernel8.img is a raw ARM64 binary — NOT PE/COFF — so it is excluded.
+    # On Raspberry Pi OS Bookworm (arm64), /boot/vmlinuz is the EFI stub kernel.
     local kernel_candidates=(
         /boot/vmlinuz
         /boot/Image
-        /boot/firmware/kernel8.img
     )
 
     local kernel=""
@@ -666,28 +668,32 @@ install_uefi_firmware() {
 enrol_keys() {
     step "6. Enrolling Secure Boot keys in UEFI NVRAM"
 
-    # Check whether we are in Setup Mode (PK not yet enrolled).
-    local setup_mode
-    setup_mode="$(efi-readvar -v PK 2>/dev/null | grep -c 'PK:' || true)"
+    # Check whether we are in Setup Mode (no PK enrolled yet).
+    # efi-readvar prints "List 0" only when at least one entry exists.
+    local pk_enrolled
+    pk_enrolled="$(efi-readvar -v PK 2>/dev/null | grep -c 'List 0' || echo 0)"
 
-    if [[ "$setup_mode" -gt 0 ]]; then
-        warn "PK is already enrolled. Attempting authenticated update."
-        warn "If this fails, you may need to clear Secure Boot keys in UEFI setup"
-        warn "menu first (Security → Secure Boot → Reset Secure Boot Keys)."
+    if [[ "$pk_enrolled" -gt 0 ]]; then
+        warn "PK is already enrolled — firmware is in User Mode."
+        warn "The .auth signed payloads will be used for authenticated updates."
+        warn "If enrolment fails, clear keys in the UEFI menu first:"
+        warn "  Security → Secure Boot → Reset Secure Boot Keys"
     else
-        info "Firmware appears to be in Setup Mode — direct enrolment possible."
+        info "Firmware is in Setup Mode (no PK enrolled) — direct enrolment."
     fi
 
-    # Enrol db first (signed payload).
+    # Write authenticated update payloads with efi-updatevar.
+    # Do NOT use the -e flag here: -e means 'treat file as plain ESL', which
+    # would ignore the auth signature.  We pass .auth files, so no -e flag.
+    # Order: db first, then KEK, then PK last (enrolling PK activates enforcement).
+
     info "Enrolling db (Signature Database) ..."
-    run efi-updatevar -e -f "${KEY_DIR}/db.auth" db
+    run efi-updatevar -f "${KEY_DIR}/db.auth" db
 
-    # Enrol KEK (signed by PK).
     info "Enrolling KEK (Key Exchange Key) ..."
-    run efi-updatevar -e -f "${KEY_DIR}/KEK.auth" KEK
+    run efi-updatevar -f "${KEY_DIR}/KEK.auth" KEK
 
-    # Enrol PK last — this locks down the firmware and activates Secure Boot.
-    info "Enrolling PK (Platform Key) — this activates Secure Boot enforcement ..."
+    info "Enrolling PK (Platform Key) — activates Secure Boot enforcement ..."
     run efi-updatevar -f "${KEY_DIR}/PK.auth" PK
 
     info "Key enrolment complete."

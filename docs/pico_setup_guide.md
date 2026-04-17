@@ -495,6 +495,10 @@ To remove the lockdown without reflashing:
 
 ## 11. Custom Firmware Build (Complete USB Removal)
 
+> **Full build documentation:** see [`docs/micropython_build.md`](micropython_build.md)
+> for prerequisites, a step-by-step explanation of every build stage,
+> board config reference, troubleshooting, and recovery instructions.
+
 For the strongest USB lockdown, build a custom MicroPython firmware with
 the TinyUSB stack completely removed at compile time
 (`MICROPY_HW_ENABLE_USBDEV=0`). This means the Pico never enumerates as
