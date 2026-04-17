@@ -14,7 +14,7 @@ set -e   # exit on any error
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-BOARD_FILES_DIR="$SCRIPT_DIR/custom_micropython_build"
+BOARD_FILES_DIR="$SCRIPT_DIR"
 MP_DIR="$SCRIPT_DIR/micropython"
 BOARD_NAME="SOMNI_GUARD_PICO2W"
 BOARD_DEST="$MP_DIR/ports/rp2/boards/$BOARD_NAME"
@@ -68,7 +68,7 @@ cd "$MP_DIR"
 # ── Step 3: Initialize submodules ─────────────────────────────────────────
 echo ""
 echo "[3/6] Initialising submodules (Pico SDK, TinyUSB, mbedtls)..."
-git submodule update --init lib/pico-sdk lib/tinyusb lib/mbedtls lib/btstack lib/cyw43-driver lib/lwip
+git submodule update --init lib/pico-sdk lib/tinyusb lib/mbedtls lib/btstack lib/cyw43-driver lib/lwip lib/micropython-lib
 cd lib/pico-sdk && git submodule update --init && cd "$MP_DIR"
 echo "  Submodules OK."
 

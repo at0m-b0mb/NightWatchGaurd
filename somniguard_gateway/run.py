@@ -87,6 +87,14 @@ def main():
     Returns:
         None
     """
+    # Start Wi-Fi hotspot (Raspberry Pi only — silently skipped on other platforms)
+    if os.environ.get("SOMNI_HOTSPOT", "true").lower() != "false":
+        try:
+            from hotspot import start_hotspot
+            start_hotspot()
+        except Exception as exc:
+            print("[SOMNI][HOTSPOT][WARN] Could not start hotspot: {}".format(exc))
+
     # Ensure the report output directory exists
     os.makedirs(cfg.REPORT_DIR, exist_ok=True)
 
