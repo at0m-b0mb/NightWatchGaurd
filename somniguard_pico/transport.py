@@ -214,9 +214,9 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
         3: "no AP found (STAT_NO_AP_FOUND)",
         4: "connect failed",
         1010: "got IP (CYW43 STAT_GOT_IP)",
-        -1: "connection failed (no reason)",
-        -2: "no AP found (connect)",
-        -3: "wrong password (auth failure)",
+        -1: "connection failed (legacy)",
+        -2: "no AP found (legacy)",
+        -3: "wrong password (legacy)",
     }
     _FAIL_FAST = {-3, -2, -1, 2, 3, 4}
     deadline = time.time() + timeout_s
@@ -225,6 +225,8 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
         if feed_wdt is not None:
             feed_wdt()
         status = wlan.status()
+        if status == 1010:
+            break
         if status in _FAIL_FAST:
             label = _STATUS.get(status, str(status))
             print("[SOMNI][WIFI] Connection failed — status={} ({})".format(status, label))
