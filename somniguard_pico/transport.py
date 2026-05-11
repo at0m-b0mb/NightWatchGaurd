@@ -210,13 +210,13 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
     _STATUS = {
         0: "idle (link down)",
         1: "connecting",
-        2: "wrong password",
-        3: "no AP found",
+        2: "wrong password (STAT_WRONG_PASSWORD)",
+        3: "no AP found (STAT_NO_AP_FOUND)",
         4: "connect failed",
-        1010: "got IP (connected)",
-        -1: "connection failed",
-        -2: "no AP found",
-        -3: "wrong password (bad auth)",
+        1010: "got IP (CYW43 STAT_GOT_IP)",
+        -1: "connection failed (no reason)",
+        -2: "no AP found (connect)",
+        -3: "wrong password (auth failure)",
     }
     _FAIL_FAST = {-3, -2, -1, 2, 3, 4}
     deadline = time.time() + timeout_s
