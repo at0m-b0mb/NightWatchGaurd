@@ -207,32 +207,44 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
     print("[SOMNI][WIFI] Connecting to '{}'…".format(ssid))
     wlan.connect(ssid, password)
 
+    _STATUS = {
+        0: "idle (link down)",
+        1: "connecting",
+        2: "wrong password",
+        3: "no AP found",
+        4: "connect failed",
+        1010: "got IP (connected)",
+        -1: "connection failed",
+        -2: "no AP found",
+        -3: "wrong password (bad auth)",
+    }
     _FAIL_FAST = {-3, -2, -1, 2, 3, 4}
     deadline = time.time() + timeout_s
-    seen_connecting = False
+    last_status = None
     while not wlan.isconnected():
         if feed_wdt is not None:
             feed_wdt()
         status = wlan.status()
-        if status == 1:
-            seen_connecting = True
-        if status in _FAIL_FAST or (seen_connecting and status == 0):
-            _NAMES = {
-                0: "idle/link-down (auth rejected?)",
-                2: "wrong password", 3: "no AP found", 4: "connect failed",
-                -1: "connection failed", -2: "no AP found", -3: "wrong password",
-            }
-            label = _NAMES.get(status, str(status))
+        if status in _FAIL_FAST:
+            label = _STATUS.get(status, str(status))
             print("[SOMNI][WIFI] Connection failed — status={} ({})".format(status, label))
             return None
+        if status != last_status:
+            print("[SOMNI][WIFI] status → {} ({})".format(
+                status, _STATUS.get(status, "unknown")))
+            last_status = status
         if time.time() > deadline:
             print("[SOMNI][WIFI] Connection timeout after {}s "
-                  "(wlan.status={}).".format(timeout_s, status))
+                  "(status={}).".format(timeout_s, status))
             return None
         time.sleep(1)
 
     ip = wlan.ifconfig()[0]
     print("[SOMNI][WIFI] Connected. IP: {}".format(ip))
+    try:
+        print("[SOMNI][WIFI] Signal: {} dBm".format(wlan.status("rssi")))
+    except Exception:
+        pass
     return ip
 
 
