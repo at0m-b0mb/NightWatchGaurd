@@ -232,6 +232,11 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
         -2,
         -3,
     }
+
+    def _log_status(status_value):
+        print("[SOMNI][WIFI] status → {} ({})".format(
+            status_value, _STATUS_LABELS.get(status_value, "unknown")))
+
     deadline = time.time() + timeout_s
     last_status = None
     while not wlan.isconnected():
@@ -243,8 +248,7 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
             print("[SOMNI][WIFI] Connection failed — status={} ({})".format(status, label))
             return None
         if status != last_status:
-            print("[SOMNI][WIFI] status → {} ({})".format(
-                status, _STATUS_LABELS.get(status, "unknown")))
+            _log_status(status)
             last_status = status
         if time.time() > deadline:
             print("[SOMNI][WIFI] Connection timeout after {}s "
@@ -254,15 +258,14 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
 
     status = wlan.status()
     if status != last_status:
-        print("[SOMNI][WIFI] status → {} ({})".format(
-            status, _STATUS_LABELS.get(status, "unknown")))
+        _log_status(status)
 
     ip = wlan.ifconfig()[0]
     print("[SOMNI][WIFI] Connected. IP: {}".format(ip))
     try:
         print("[SOMNI][WIFI] Signal: {} dBm".format(wlan.status("rssi")))
-    except Exception:
-        pass
+    except Exception as exc:
+        print("[SOMNI][WIFI] Signal unavailable: {}".format(exc))
     return ip
 
 
