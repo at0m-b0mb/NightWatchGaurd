@@ -214,11 +214,11 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
     _CYW43_STAT_CONNECT_FAIL = 4
     _CYW43_STAT_GOT_IP = 1010
     _STATUS_LABELS = {
-        _CYW43_STAT_IDLE: "idle (link down)",
-        _CYW43_STAT_CONNECTING: "connecting",
-        _CYW43_STAT_WRONG_PASSWORD: "wrong password (STAT_WRONG_PASSWORD)",
-        _CYW43_STAT_NO_AP_FOUND: "no AP found (STAT_NO_AP_FOUND)",
-        _CYW43_STAT_CONNECT_FAIL: "connect failed",
+        _CYW43_STAT_IDLE: "idle (CYW43 STAT_IDLE)",
+        _CYW43_STAT_CONNECTING: "connecting (CYW43 STAT_CONNECTING)",
+        _CYW43_STAT_WRONG_PASSWORD: "wrong password (CYW43 STAT_WRONG_PASSWORD)",
+        _CYW43_STAT_NO_AP_FOUND: "no AP found (CYW43 STAT_NO_AP_FOUND)",
+        _CYW43_STAT_CONNECT_FAIL: "connect failed (CYW43 STAT_CONNECT_FAIL)",
         _CYW43_STAT_GOT_IP: "got IP (CYW43 STAT_GOT_IP)",
         -1: "connection failed (legacy)",
         -2: "no AP found (legacy)",
@@ -254,9 +254,8 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
 
     status = wlan.status()
     if status != last_status:
-        label = _STATUS_LABELS.get(status)
-        if label is not None:
-            print("[SOMNI][WIFI] status → {} ({})".format(status, label))
+        print("[SOMNI][WIFI] status → {} ({})".format(
+            status, _STATUS_LABELS.get(status, "unknown")))
 
     ip = wlan.ifconfig()[0]
     print("[SOMNI][WIFI] Connected. IP: {}".format(ip))
