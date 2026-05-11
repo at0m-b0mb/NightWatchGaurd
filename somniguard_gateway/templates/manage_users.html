@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Manage users — SOMNI-Guard{% endblock %}
+{% block content %}
+<h1>👤 Manage users</h1>
+
+<div class="card">
+  <h2>Create new user</h2>
+  <form method="post" action="{{ url_for('create_user') }}" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="form-grid-3">
+      <div class="form-group" style="margin:0;">
+        {{ form.username.label }}
+        {{ form.username(placeholder="username") }}
+      </div>
+      <div class="form-group" style="margin:0;">
+        {{ form.email.label }}
+        {{ form.email(placeholder="user@example.com") }}
+      </div>
+      <div class="form-group" style="margin:0;">
+        {{ form.password.label }}
+        {{ form.password(placeholder="14+ chars, mixed classes",
+                         autocomplete="new-password") }}
+      </div>
+      <div class="form-group" style="margin:0;">
+        {{ form.role.label }}
+        {{ form.role() }}
+      </div>
+    </div>
+    <p class="muted" style="font-size:.85rem; margin:.25rem 0 0;">
+      The new user will be required to enrol an authenticator app before
+      they can use the dashboard.
+    </p>
+    <button type="submit" class="btn btn-success" style="margin-top:.75rem;">Create user</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>All users ({{ users|length }})</h2>
+  {% if users %}
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Username</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th>Last login</th>
+        <th>Pwd reset</th>
+        <th style="width: 360px;">Admin actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.id }}</td>
+        <td><strong>{{ u.username }}</strong></td>
+        <td>{{ u.email }}</td>
+        <td><span class="badge badge-{{ u.role }}">{{ u.role }}</span></td>
+        <td>
+          {% if u.is_active %}<span class="badge badge-online">active</span>
+          {% else %}<span class="badge badge-offline">disabled</span>{% endif %}
+        </td>
+        <td class="muted" style="font-size:.82rem;">
+          {{ u.last_login_at or '—' }}<br>
+          {% if u.last_login_ip %}<code class="inline">{{ u.last_login_ip }}</code>{% endif %}
+        </td>
+        <td>
+          {% if u.must_change_password %}
+            <span class="badge badge-pending">pending</span>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if u.id != current_user.id %}
+          <div style="display:flex; flex-wrap:wrap; gap:.35rem;">
+            <form method="post" action="{{ url_for('admin_reset_password', user_id=u.id) }}" style="display:inline;"
+                  onsubmit="return confirm('Reset password for {{ u.username }}?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-warning btn-sm">Reset password</button>
+            </form>
+            <form method="post" action="{{ url_for('mfa_disable') }}" style="display:inline;"
+                  onsubmit="return confirm('Reset MFA for {{ u.username }}? They will be asked to enrol again on next login.');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="user_id" value="{{ u.id }}">
+              <button type="submit" class="btn btn-warning btn-sm">Reset MFA</button>
+            </form>
+            <form method="post" action="{{ url_for('admin_toggle_active', user_id=u.id) }}" style="display:inline;">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-secondary btn-sm">
+                {{ 'Disable' if u.is_active else 'Enable' }}
+              </button>
+            </form>
+            <form method="post" action="{{ url_for('delete_user', user_id=u.id) }}" style="display:inline;"
+                  onsubmit="return confirm('Permanently delete user {{ u.username }}? This cannot be undone.');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+            </form>
+          </div>
+          {% else %}
+          <span class="muted">(your account)</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">No users found.</p>
+  {% endif %}
+</div>
+{% endblock %}

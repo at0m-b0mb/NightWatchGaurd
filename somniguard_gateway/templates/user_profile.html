@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Account — SOMNI-Guard{% endblock %}
+{% block content %}
+<h1>👤 Account</h1>
+
+<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr)); gap:1.5rem;">
+
+  <div class="card">
+    <h2>Profile</h2>
+    <table>
+      <tr><th style="width:160px;">Username</th><td>{{ user.username }}</td></tr>
+      <tr><th>Email</th><td>{{ user.email }}</td></tr>
+      <tr><th>Role</th><td><span class="badge badge-{{ user.role }}">{{ user.role }}</span></td></tr>
+      <tr><th>Account created</th><td class="muted">{{ user.created_at }}</td></tr>
+      <tr><th>Last login</th><td class="muted">{{ user.last_login_at or '—' }}{% if user.last_login_ip %} from <code class="inline">{{ user.last_login_ip }}</code>{% endif %}</td></tr>
+      <tr><th>Password changed</th><td class="muted">{{ user.password_changed_at or '—' }}</td></tr>
+      <tr><th>Status</th>
+        <td>
+          {% if user.is_active %}<span class="badge badge-online">active</span>
+          {% else %}<span class="badge badge-offline">deactivated</span>{% endif %}
+        </td></tr>
+    </table>
+    <p style="margin-top:1rem;">
+      <a class="btn btn-primary" href="{{ url_for('force_password_change') }}">
+        Change password
+      </a>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Two-factor authentication</h2>
+    {% if mfa_on %}
+      <p>
+        <span class="badge badge-success">enabled</span>
+        Your account is protected with TOTP-based two-factor authentication.
+      </p>
+      <form method="post" action="{{ url_for('mfa_backup_codes') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-warning"
+                onclick="return confirm('Generate fresh backup codes? This invalidates any unused codes from before.');">
+          Regenerate backup codes
+        </button>
+      </form>
+      <p class="muted" style="margin-top:.75rem; font-size:.85rem;">
+        If you lose your authenticator, ask an administrator to reset MFA
+        for your account from the user-management page.
+      </p>
+    {% else %}
+      <p>
+        <span class="badge badge-warning">required</span>
+        You have not yet enrolled an authenticator.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('mfa_setup') }}">
+        Enrol an authenticator
+      </a>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

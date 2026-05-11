@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Clinical alerts — SOMNI-Guard{% endblock %}
+{% block content %}
+<h1>🚨 Clinical alerts</h1>
+
+<div class="toolbar">
+  <a class="btn {{ 'btn-primary' if only_unack else 'btn-outline' }}"
+     href="{{ url_for('alerts_view', filter='unack') }}">Unacknowledged</a>
+  <a class="btn {{ 'btn-primary' if not only_unack else 'btn-outline' }}"
+     href="{{ url_for('alerts_view', filter='all') }}">All recent</a>
+</div>
+
+<div class="card">
+  {% if alerts %}
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:170px;">Triggered</th>
+          <th>Severity</th>
+          <th>Patient</th>
+          <th>Session</th>
+          <th>Metric</th>
+          <th>Value vs threshold</th>
+          <th>Message</th>
+          <th>State</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in alerts %}
+        <tr {% if a.severity == 'critical' and not a.acknowledged_at %}style="background:#fef2f2;"{% endif %}>
+          <td>{{ a.triggered_at }}</td>
+          <td><span class="badge badge-{{ 'critical' if a.severity == 'critical' else 'warning' }}">{{ a.severity }}</span></td>
+          <td>
+            <a href="{{ url_for('patient_detail', patient_id=a.patient_id) }}">{{ a.patient_name }}</a>
+          </td>
+          <td>
+            <a href="{{ url_for('session_detail', session_id=a.session_id) }}">#{{ a.session_id }}</a>
+          </td>
+          <td><code class="inline">{{ a.metric or a.alert_type }}</code></td>
+          <td>
+            {% if a.measured_value is not none %}{{ "%.2f"|format(a.measured_value) }}{% else %}—{% endif %}
+            {% if a.threshold_value is not none %}<span class="muted"> / {{ "%.2f"|format(a.threshold_value) }}</span>{% endif %}
+          </td>
+          <td>{{ a.message }}</td>
+          <td>
+            {% if a.acknowledged_at %}
+              <span class="badge badge-success">ack'd</span>
+              <div class="muted" style="font-size:.78rem;">{{ a.acknowledged_by_name or '—' }}<br>{{ a.acknowledged_at }}</div>
+            {% else %}
+              <form method="post" action="{{ url_for('acknowledge_alert_route', alert_id=a.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-success btn-sm" type="submit">Acknowledge</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No alerts to show.</p>
+  {% endif %}
+</div>
+{% endblock %}

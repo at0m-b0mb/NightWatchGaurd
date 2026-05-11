@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Live monitor — SOMNI-Guard{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1 style="margin:0;">📈 Live monitor</h1>
+  <span class="grow"></span>
+  <span class="chip" id="last-update">Connecting…</span>
+</div>
+
+<p class="muted" style="margin-top:-.25rem;">
+  Real-time view of every active sleep session. Tiles refresh automatically.
+  Tiles outlined in <span class="badge badge-warning">warning</span> /
+  <span class="badge badge-critical">critical</span> red have open
+  un-acknowledged alerts.
+</p>
+
+<div id="live-grid" style="margin-top:1rem;
+  display:grid; grid-template-columns: repeat(auto-fit, minmax(360px,1fr));
+  gap: 1rem;">
+  {% if not sessions %}
+    <p class="muted">No active sessions. Power on a Pico device to begin monitoring.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/live.js') }}" defer></script>
+{% endblock %}

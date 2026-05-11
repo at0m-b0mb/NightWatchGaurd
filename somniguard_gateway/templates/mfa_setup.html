@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Enrol authenticator — SOMNI-Guard{% endblock %}
+{% block content %}
+<div style="max-width:600px; margin:2rem auto;">
+  <div class="card">
+    <h1>🛡️ Enrol two-factor authentication</h1>
+    <div class="alert alert-info">
+      <strong>MFA is mandatory for every SOMNI-Guard account.</strong>
+      You cannot access patient data until enrolment is complete.
+    </div>
+    <p>
+      Scan the QR code below with an authenticator app
+      (Google Authenticator, Microsoft Authenticator, Aegis, 1Password,
+      Bitwarden, Authy, etc.) for user
+      <strong>{{ username }}</strong>. Then enter the 6-digit code the app
+      shows to confirm enrolment.
+    </p>
+
+    <div style="text-align:center; margin: 1rem 0;">
+      <img src="{{ url_for('mfa_setup_qr') }}" alt="TOTP QR code"
+           style="width:240px; height:240px; image-rendering:pixelated;
+                  border:1px solid #cfd8e3; border-radius:8px; padding:6px;
+                  background:#fff;" />
+    </div>
+
+    <p style="text-align:center;">
+      <strong>Manual entry secret:</strong>
+      <code class="inline" style="user-select: all; font-size: .95rem;">{{ secret }}</code>
+    </p>
+
+    <hr style="margin:1.25rem 0; border:none; border-top:1px solid #e2e8f0;">
+
+    <form method="post" novalidate>
+      {{ form.hidden_tag() }}
+      <div class="form-group">
+        {{ form.code.label }}
+        {{ form.code(placeholder="6-digit code from your app",
+                     autocomplete="one-time-code",
+                     inputmode="numeric",
+                     autofocus=True) }}
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;">
+        Confirm and enable MFA
+      </button>
+    </form>
+
+    <p class="muted" style="font-size:.85rem; margin-top:1rem;">
+      The TOTP secret is encrypted at rest using a key derived from the
+      gateway secret and never leaves the device. After enrolment you will
+      be shown a list of one-time backup codes — print them or copy them
+      to a password manager so you can recover access if your authenticator
+      is lost.
+    </p>
+  </div>
+</div>
+{% endblock %}

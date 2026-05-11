@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Device fleet — SOMNI-Guard{% endblock %}
+{% block content %}
+<h1>📡 Device fleet</h1>
+
+<p class="muted" style="margin-top:-.5rem;">
+  Devices that have been heard from in the last {{ online_window_s }} seconds
+  are considered <span class="badge badge-online">online</span>.
+</p>
+
+<div class="card">
+  {% if devices %}
+  <table>
+    <thead>
+      <tr>
+        <th>Device ID</th>
+        <th>State</th>
+        <th>Last seen</th>
+        <th>Battery</th>
+        <th>Wi-Fi RSSI</th>
+        <th>IP</th>
+        <th>Firmware</th>
+        <th>Last patient</th>
+        <th>Session</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for d in devices %}
+      <tr>
+        <td><strong>{{ d.device_id }}</strong></td>
+        <td>
+          {% if d.online %}
+            <span class="badge badge-online">online</span>
+          {% else %}
+            <span class="badge badge-offline">offline</span>
+          {% endif %}
+        </td>
+        <td class="muted">{{ d.last_seen_at or '—' }}</td>
+        <td>
+          {% if d.last_battery_pct is not none %}
+            {% set pct = d.last_battery_pct|float %}
+            <span class="badge badge-{{ 'critical' if pct < 15 else 'warning' if pct < 30 else 'online' }}">
+              {{ "%.0f"|format(pct) }}%
+            </span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{% if d.last_rssi_dbm is not none %}{{ d.last_rssi_dbm }} dBm{% else %}—{% endif %}</td>
+        <td><code class="inline">{{ d.last_ip or '—' }}</code></td>
+        <td><code class="inline">{{ d.firmware_version or '—' }}</code></td>
+        <td>
+          {% if d.last_patient_name and d.patient_id %}
+            <a href="{{ url_for('patient_detail', patient_id=d.patient_id) }}">{{ d.last_patient_name }}</a>
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% if d.last_session_id %}
+            <a class="btn btn-outline btn-sm" href="{{ url_for('session_detail', session_id=d.last_session_id) }}">Open</a>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No devices have contacted this gateway yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,104 @@
+[Unit]
+Description=SOMNI-Guard Gateway — sleep-monitoring REST API + dashboard
+Documentation=https://github.com/anthropics/NightWatchGaurd
+
+# The hotspot is brought up by NetworkManager (autoconnect=yes on the
+# SomniGuard_Hotspot connection profile). network-online.target waits
+# for NetworkManager-wait-online.service, which signals "at least one
+# managed connection is active" — that includes the AP profile in
+# shared/AP mode, so by the time we start the AP is up.
+After=network-online.target NetworkManager.service
+Wants=network-online.target NetworkManager.service
+
+# Boot-loop guard.  Default systemd policy (5 starts in 10s) is hostile
+# to a Pi 5 cold boot where /api/time can take 30+s to come up while
+# certs regenerate.  Allow up to 10 restarts in any 5-minute window
+# before giving up — covers a flaky cert path, a slow nmcli probe, etc.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+# NOTE: This file is the REFERENCE copy kept in the repo.
+# `setup_gateway.sh` writes a path-substituted version to
+# /etc/systemd/system/somniguard-gateway.service at install time.
+# Edit *that* file (or re-run setup_gateway.sh) to change deployed settings.
+
+[Service]
+Type=simple
+User=somniguard
+Group=somniguard
+
+# Supplementary group: NetworkManager's default polkit rules grant
+# `netdev` both `network-control` and `system-connection-modify`,
+# so the gateway can call plain `nmcli` (no sudo) to manage the
+# hotspot.  setup_gateway.sh runs `usermod -aG netdev somniguard`.
+SupplementaryGroups=netdev
+
+WorkingDirectory=/opt/NightWatchGaurd/somniguard_gateway
+
+EnvironmentFile=/etc/somniguard/env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=SOMNI_HOTSPOT_CREDS=/var/lib/somniguard/hotspot_credentials.json
+
+# Refresh the server cert SANs for the current IP if the script exists.
+# The leading '-' marks this as "best-effort" — a transient failure here
+# (e.g., filesystem slow to mount) will NOT prevent the main service
+# from starting. run.py itself also calls the same script at boot.
+ExecStartPre=-/opt/NightWatchGaurd/.venv/bin/python /opt/NightWatchGaurd/scripts/setup_gateway_certs.py --cert-dir /etc/somniguard/certs
+
+ExecStart=/opt/NightWatchGaurd/.venv/bin/python /opt/NightWatchGaurd/somniguard_gateway/run.py
+
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=20
+KillSignal=SIGTERM
+# Don't restart on intentional clean exit (e.g., SIGTERM from systemctl
+# stop) — only on crashes / non-zero exits.  EXIT_SUCCESS = 0.
+SuccessExitStatus=0
+RestartPreventExitStatus=0
+
+# ── Sandboxing — relaxed enough to actually run on a Pi ───────────────────
+# NOTE: NoNewPrivileges, RestrictSUIDSGID, and MemoryDenyWriteExecute have
+# all been intentionally DROPPED.  The first two prevent setuid binaries
+# (e.g. sudo) from elevating, and breaking nmcli unnecessarily — we've moved
+# to the netdev-group + polkit pattern instead.  MemoryDenyWriteExecute is
+# documented as incompatible with code-generating Python extensions (cffi
+# callbacks, some cryptography paths on aarch64 BTI).
+
+PrivateTmp=true
+PrivateDevices=true
+
+# ProtectSystem=full leaves /etc writable to root but readonly to us,
+# and keeps /usr, /boot read-only.  "strict" would block writes to
+# everything except ReadWritePaths — too aggressive for the cert-renew
+# ExecStartPre path which writes under /etc/somniguard/certs.
+ProtectSystem=full
+
+# ProtectHome=read-only lets the service READ source code from
+# /home/<user>/NightWatchGaurd/ on developer Pis, while still preventing
+# writes into anyone's home directory.  Production deploys typically
+# install under /opt/NightWatchGaurd/ where this flag has no effect.
+ProtectHome=read-only
+
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+# Only these paths are writable to the service:
+ReadWritePaths=/var/lib/somniguard /var/log/somniguard /etc/somniguard/certs
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=somniguard-gateway
+
+[Install]
+WantedBy=multi-user.target

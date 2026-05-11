@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+{% block title %}Session #{{ sess.id }} — SOMNI-Guard{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1 style="margin:0;">🌙 Session #{{ sess.id }} — {{ sess.patient_name }}</h1>
+  <span class="grow"></span>
+  <a class="btn btn-outline btn-sm" href="{{ url_for('patient_detail', patient_id=sess.patient_id) }}">
+    ← Back to patient
+  </a>
+</div>
+
+<!-- Session metadata -->
+<div class="card">
+  <h2>Session information</h2>
+  <table style="width:auto;">
+    <tr><th>Session ID</th>      <td>{{ sess.id }}</td></tr>
+    <tr><th>Patient</th>         <td>{{ sess.patient_name }}</td></tr>
+    <tr><th>Patient DOB</th>     <td>{{ sess.patient_dob or '—' }}</td></tr>
+    <tr><th>Device</th>          <td><code class="inline">{{ sess.device_id }}</code></td></tr>
+    <tr><th>Started</th>         <td>{{ sess.started_at }}</td></tr>
+    <tr><th>Ended</th>           <td>{{ sess.ended_at or '⏳ ongoing' }}</td></tr>
+    <tr><th>Discharge</th>
+        <td>
+          {% if sess.discharged_at %}
+            <span class="badge badge-success">discharged</span>
+            {{ sess.discharged_at }}
+            {% if sess.discharge_notes %}<div class="muted" style="margin-top:.25rem;">{{ sess.discharge_notes }}</div>{% endif %}
+          {% else %}—{% endif %}
+        </td></tr>
+    <tr><th>Notes</th>           <td>{{ sess.notes or '—' }}</td></tr>
+  </table>
+</div>
+
+<!-- Summary stats (if report exists) -->
+{% if summary %}
+<div class="card">
+  <h2>📋 Sleep summary (non-clinical)</h2>
+  <div class="stat-grid">
+    <div class="stat-box">
+      <div class="val">{{ summary.spo2.mean if summary.spo2.mean else '—' }}%</div>
+      <div class="lbl">Mean SpO₂</div>
+    </div>
+    <div class="stat-box {{ 'warning' if summary.spo2.min and summary.spo2.min < 90 else '' }}">
+      <div class="val">{{ summary.spo2.min if summary.spo2.min else '—' }}%</div>
+      <div class="lbl">Min SpO₂</div>
+    </div>
+    <div class="stat-box">
+      <div class="val">{{ summary.hr.mean if summary.hr.mean else '—' }}</div>
+      <div class="lbl">Mean HR (bpm)</div>
+    </div>
+    <div class="stat-box {{ 'warning' if summary.desaturation_events > 5 else '' }}">
+      <div class="val">{{ summary.desaturation_events }}</div>
+      <div class="lbl">Desaturation events</div>
+    </div>
+    <div class="stat-box">
+      <div class="val">{{ summary.movement_events }}</div>
+      <div class="lbl">Movement events</div>
+    </div>
+    <div class="stat-box">
+      <div class="val">{{ summary.duration_s }}s</div>
+      <div class="lbl">Session duration</div>
+    </div>
+  </div>
+  <p class="muted" style="margin-top:.5rem; font-size:.8rem;">
+    {{ summary.non_clinical_note }}
+  </p>
+</div>
+{% endif %}
+
+<!-- Alerts -->
+<div class="card">
+  <div class="toolbar">
+    <h2 style="margin:0;">🚨 Alerts ({{ alerts|length }})</h2>
+    <span class="grow"></span>
+    <a class="btn btn-outline btn-sm" href="{{ url_for('alerts_view') }}">All alerts →</a>
+  </div>
+  {% if alerts %}
+  <table>
+    <thead>
+      <tr>
+        <th>Triggered</th>
+        <th>Severity</th>
+        <th>Metric</th>
+        <th>Value / threshold</th>
+        <th>Message</th>
+        <th>State</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in alerts %}
+      <tr {% if a.severity == 'critical' and not a.acknowledged_at %}style="background:#fef2f2;"{% endif %}>
+        <td>{{ a.triggered_at }}</td>
+        <td><span class="badge badge-{{ 'critical' if a.severity == 'critical' else 'warning' }}">{{ a.severity }}</span></td>
+        <td><code class="inline">{{ a.metric or a.alert_type }}</code></td>
+        <td>
+          {% if a.measured_value is not none %}{{ "%.2f"|format(a.measured_value) }}{% else %}—{% endif %}
+          {% if a.threshold_value is not none %}<span class="muted"> / {{ "%.2f"|format(a.threshold_value) }}</span>{% endif %}
+        </td>
+        <td>{{ a.message }}</td>
+        <td>
+          {% if a.acknowledged_at %}
+            <span class="badge badge-success">ack'd</span>
+          {% else %}
+          {% if current_user.role in ('admin', 'doctor', 'clinician', 'nurse') %}
+            <form method="post" action="{{ url_for('acknowledge_alert_route', alert_id=a.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-success btn-sm" type="submit">Acknowledge</button>
+            </form>
+          {% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No threshold alerts triggered for this session.</p>
+  {% endif %}
+</div>
+
+<!-- Clinical notes -->
+<div class="card">
+  <h2>📝 Clinical notes ({{ notes|length }})</h2>
+  {% if current_user.role in ('admin', 'doctor', 'clinician', 'nurse') %}
+    <form method="post" action="{{ url_for('add_session_note', session_id=sess.id) }}" novalidate>
+      {{ note_form.hidden_tag() }}
+      <div class="form-group">
+        {{ note_form.body.label }}
+        {{ note_form.body(placeholder="e.g. Patient reports restful sleep; mild snoring observed at 03:14.") }}
+      </div>
+      <button type="submit" class="btn btn-primary">Save note</button>
+    </form>
+    <hr style="margin:1rem 0; border:none; border-top:1px solid #e2e8f0;">
+  {% endif %}
+  {% if notes %}
+  {% for n in notes %}
+    <div style="border:1px solid #e2e8f0; border-radius:8px; padding:.7rem 1rem; margin-bottom:.5rem; background:#fafbfd;">
+      <div class="muted" style="font-size:.78rem;">
+        {{ n.author_name or '—' }} · {{ n.created_at }}
+        {% if current_user.role in ('admin', 'doctor') %}
+        <form method="post" action="{{ url_for('delete_session_note', session_id=sess.id, note_id=n.id) }}"
+              style="float:right;" onsubmit="return confirm('Delete this clinical note?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+        </form>
+        {% endif %}
+      </div>
+      <div style="margin-top:.25rem; white-space:pre-wrap;">{{ n.body }}</div>
+    </div>
+  {% endfor %}
+  {% else %}
+  <p class="muted">No clinical notes yet.</p>
+  {% endif %}
+</div>
+
+<!-- Discharge -->
+{% if not sess.discharged_at and current_user.role in ('admin', 'doctor', 'clinician') %}
+<div class="card">
+  <h2>🚪 Discharge session</h2>
+  <p class="muted">Discharging marks the session clinically complete and stamps an end-time if it is still ongoing.</p>
+  <form method="post" action="{{ url_for('discharge_session_route', session_id=sess.id) }}">
+    {{ discharge_form.hidden_tag() }}
+    <div class="form-group">
+      {{ discharge_form.discharge_notes.label }}
+      {{ discharge_form.discharge_notes(placeholder="Summary, follow-up plan, next-steps…") }}
+    </div>
+    <button type="submit" class="btn btn-warning"
+            onclick="return confirm('Discharge this session? End-time will be stamped now.');">
+      Discharge session
+    </button>
+  </form>
+</div>
+{% endif %}
+
+<!-- Report actions -->
+<div class="card">
+  <h2>📄 Report</h2>
+  {% if current_user.role in ('admin', 'doctor', 'clinician') %}
+  <form method="post" action="{{ url_for('generate_report', session_id=sess.id) }}" style="display:inline;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-success">
+      {% if report %}🔄 Regenerate report{% else %}⚙️ Generate report{% endif %}
+    </button>
+  </form>
+  {% endif %}
+  {% if report and report.pdf_path %}
+  {% if current_user.role in ('admin', 'doctor', 'clinician') %}
+    <a class="btn btn-primary" href="{{ url_for('download_report', session_id=sess.id) }}" style="margin-left:.5rem;">
+      ⬇️ Download PDF
+    </a>
+  {% endif %}
+    <p class="muted" style="margin-top:.5rem;">Last generated: {{ report.generated_at }}</p>
+    {% if report.hmac_sig %}
+    <p class="muted" style="font-size:.78rem;">
+      Report integrity (HMAC-SHA256): <code class="inline">{{ report.hmac_sig[:32] }}…</code>
+    </p>
+    {% endif %}
+  {% endif %}
+</div>
+
+<!-- Raw telemetry table -->
+<div class="card">
+  <h2>📡 Raw telemetry (latest {{ telemetry|length }} of up to 200)</h2>
+  {% if telemetry %}
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th>t (ms)</th>
+          <th>SpO₂ %</th>
+          <th>HR bpm</th>
+          <th>Accel X g</th>
+          <th>Accel Y g</th>
+          <th>Accel Z g</th>
+          <th>GSR µS</th>
+          <th>Valid</th>
+          <th>Received</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in telemetry %}
+        <tr>
+          <td>{{ r.timestamp_ms }}</td>
+          <td>{% if r.spo2 is not none %}{{ "%.1f"|format(r.spo2) }}{% else %}—{% endif %}</td>
+          <td>{% if r.hr is not none %}{{ "%.1f"|format(r.hr) }}{% else %}—{% endif %}</td>
+          <td>{% if r.accel_x is not none %}{{ "%.3f"|format(r.accel_x) }}{% else %}—{% endif %}</td>
+          <td>{% if r.accel_y is not none %}{{ "%.3f"|format(r.accel_y) }}{% else %}—{% endif %}</td>
+          <td>{% if r.accel_z is not none %}{{ "%.3f"|format(r.accel_z) }}{% else %}—{% endif %}</td>
+          <td>{% if r.gsr_conductance_us is not none %}{{ "%.2f"|format(r.gsr_conductance_us) }}{% else %}—{% endif %}</td>
+          <td>
+            {% if r.valid_spo2 %}<span class="chip">SpO₂</span>{% endif %}
+            {% if r.valid_accel %}<span class="chip">Accel</span>{% endif %}
+            {% if r.valid_gsr %}<span class="chip">GSR</span>{% endif %}
+          </td>
+          <td class="muted">{{ r.received_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No telemetry received for this session yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

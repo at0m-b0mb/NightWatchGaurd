@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}{{ patient.name }} — SOMNI-Guard{% endblock %}
+{% block content %}
+<div class="toolbar">
+  <h1 style="margin:0;">👤 {{ patient.name }}{% if patient.mrn %} <span class="chip">MRN {{ patient.mrn }}</span>{% endif %}</h1>
+  <span class="grow"></span>
+  {% if current_user.role in ('admin', 'doctor', 'clinician') %}
+    {% if patient.archived %}
+    <form method="post" action="{{ url_for('archive_patient_route', patient_id=patient.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="restore" value="1">
+      <button type="submit" class="btn btn-success btn-sm">Restore patient</button>
+    </form>
+    {% else %}
+    <form method="post" action="{{ url_for('archive_patient_route', patient_id=patient.id) }}"
+          onsubmit="return confirm('Archive this patient? You can restore later.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-warning btn-sm">Archive</button>
+    </form>
+    {% endif %}
+  {% endif %}
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
+  <div class="card">
+    <h2>Demographics</h2>
+    <table>
+      <tr><th style="width:170px;">MRN</th><td>{{ patient.mrn or '—' }}</td></tr>
+      <tr><th>Date of birth</th><td>{{ patient.dob or '—' }}</td></tr>
+      <tr><th>Sex</th><td>{{ patient.sex or '—' }}</td></tr>
+      <tr><th>Height</th><td>{% if patient.height_cm %}{{ "%.1f"|format(patient.height_cm) }} cm{% else %}—{% endif %}</td></tr>
+      <tr><th>Weight</th><td>{% if patient.weight_kg %}{{ "%.1f"|format(patient.weight_kg) }} kg{% else %}—{% endif %}</td></tr>
+      <tr><th>Contact phone</th><td>{{ patient.contact_phone or '—' }}</td></tr>
+      <tr><th>Contact email</th><td>{{ patient.contact_email or '—' }}</td></tr>
+      <tr><th>Allergies</th><td>{{ patient.allergies or '—' }}</td></tr>
+      <tr><th>Clinical notes</th><td>{{ patient.notes or '—' }}</td></tr>
+      <tr><th>Record created</th><td class="muted">{{ patient.created_at }}</td></tr>
+    </table>
+    <p style="margin-top:.75rem;">
+      <a class="btn btn-secondary btn-sm" href="{{ url_for('patients') }}">← Back to patients</a>
+    </p>
+  </div>
+
+  {% if current_user.role in ('admin', 'doctor', 'clinician', 'nurse') and not patient.archived %}
+  <div class="card">
+    <h2>Edit patient</h2>
+    <form method="post" action="{{ url_for('edit_patient', patient_id=patient.id) }}" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label>Full name</label>
+          <input type="text" name="name" value="{{ patient.name }}" required>
+        </div>
+        <div class="form-group">
+          <label>MRN</label>
+          <input type="text" name="mrn" value="{{ patient.mrn or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Date of birth</label>
+          <input type="date" name="dob" value="{{ patient.dob or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Sex</label>
+          <select name="sex">
+            {% for v, label in [('','—'),('female','Female'),('male','Male'),('intersex','Intersex'),('other','Other / Prefer not to say')] %}
+              <option value="{{ v }}" {% if patient.sex == v %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Contact phone</label>
+          <input type="text" name="contact_phone" value="{{ patient.contact_phone or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Contact email</label>
+          <input type="email" name="contact_email" value="{{ patient.contact_email or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Height (cm)</label>
+          <input type="number" step="0.1" name="height_cm" value="{{ patient.height_cm or '' }}">
+        </div>
+        <div class="form-group">
+          <label>Weight (kg)</label>
+          <input type="number" step="0.1" name="weight_kg" value="{{ patient.weight_kg or '' }}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Allergies</label>
+        <textarea name="allergies">{{ patient.allergies or '' }}</textarea>
+      </div>
+      <div class="form-group">
+        <label>Clinical notes</label>
+        <textarea name="notes" placeholder="Free-text notes…">{{ patient.notes or '' }}</textarea>
+      </div>
+      <button type="submit" class="btn btn-primary">💾 Save changes</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Sleep sessions ({{ sessions|length }})</h2>
+  {% if sessions %}
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Device</th>
+        <th>Started</th>
+        <th>Ended</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td><code class="inline">{{ s.device_id }}</code></td>
+        <td>{{ s.started_at }}</td>
+        <td>{{ s.ended_at or '⏳ ongoing' }}</td>
+        <td>
+          {% if s.discharged_at %}
+            <span class="badge badge-success">discharged</span>
+          {% elif s.ended_at %}
+            <span class="badge badge-info">ended</span>
+          {% else %}
+            <span class="badge badge-warning">live</span>
+          {% endif %}
+        </td>
+        <td>
+          <a class="btn btn-primary btn-sm" href="{{ url_for('session_detail', session_id=s.id) }}">View session</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No sessions recorded for this patient yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

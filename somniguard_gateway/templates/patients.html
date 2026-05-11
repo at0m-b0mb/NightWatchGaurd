@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Patients — SOMNI-Guard{% endblock %}
+{% block content %}
+<h1>👥 Patients</h1>
+
+{% if current_user.role in ('admin', 'doctor', 'clinician', 'nurse') %}
+<div class="card">
+  <h2>Add new patient</h2>
+  <form method="post" action="{{ url_for('new_patient') }}" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="form-grid-2">
+      <div class="form-group">{{ form.name.label }} {{ form.name(placeholder="Full name") }}</div>
+      <div class="form-group">{{ form.mrn.label }} {{ form.mrn(placeholder="Medical record number") }}</div>
+      <div class="form-group">{{ form.dob.label }} {{ form.dob() }}</div>
+      <div class="form-group">{{ form.sex.label }} {{ form.sex() }}</div>
+      <div class="form-group">{{ form.contact_phone.label }} {{ form.contact_phone(placeholder="+1 555 123 4567") }}</div>
+      <div class="form-group">{{ form.contact_email.label }} {{ form.contact_email(placeholder="next-of-kin@example.com") }}</div>
+      <div class="form-group">{{ form.height_cm.label }} {{ form.height_cm(placeholder="cm") }}</div>
+      <div class="form-group">{{ form.weight_kg.label }} {{ form.weight_kg(placeholder="kg") }}</div>
+    </div>
+    <div class="form-group">{{ form.allergies.label }} {{ form.allergies(placeholder="Drug / food / latex / none known") }}</div>
+    <div class="form-group">{{ form.notes.label }} {{ form.notes(placeholder="Optional clinical notes…") }}</div>
+    <button type="submit" class="btn btn-success">Add patient</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="toolbar">
+    <h2 style="margin:0;">Patient list ({{ patients|length }})</h2>
+    <span class="grow"></span>
+    {% if show_archived %}
+      <a class="btn btn-outline btn-sm" href="{{ url_for('patients') }}">Show active only</a>
+    {% else %}
+      <a class="btn btn-outline btn-sm" href="{{ url_for('patients', show='archived') }}">Show archived too</a>
+    {% endif %}
+  </div>
+  {% if patients %}
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>MRN</th>
+        <th>Name</th>
+        <th>DOB</th>
+        <th>Sex</th>
+        <th>Allergies</th>
+        <th>Created by</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in patients %}
+      <tr {% if p.archived %}style="opacity:.65;"{% endif %}>
+        <td>{{ p.id }}</td>
+        <td><code class="inline">{{ p.mrn or '—' }}</code></td>
+        <td><strong>{{ p.name }}</strong></td>
+        <td>{{ p.dob or '—' }}</td>
+        <td>{{ p.sex or '—' }}</td>
+        <td class="muted">{{ (p.allergies or '')[:40] }}{% if p.allergies and p.allergies|length > 40 %}…{% endif %}</td>
+        <td>{{ p.created_by_name or '—' }}</td>
+        <td>
+          {% if p.archived %}<span class="badge badge-offline">archived</span>
+          {% else %}<span class="badge badge-online">active</span>{% endif %}
+        </td>
+        <td>
+          <a class="btn btn-primary btn-sm" href="{{ url_for('patient_detail', patient_id=p.id) }}">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">No patients yet. Add one above.</p>
+  {% endif %}
+</div>
+{% endblock %}

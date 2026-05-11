@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SOMNI-Guard{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='28'%3E%F0%9F%8C%99%3C/text%3E%3C/svg%3E">
+  <style>
+    :root {
+      --brand-navy:   #0f2744;
+      --brand-blue:   #2563eb;
+      --brand-teal:   #0891b2;
+      --success:      #16a34a;
+      --warning:      #f59e0b;
+      --danger:       #dc2626;
+      --critical:     #b91c1c;
+      --light-bg:     #f8fafc;
+      --border-color: #e2e8f0;
+      --text-primary: #1e293b;
+      --text-secondary: #64748b;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        system-ui, sans-serif;
+      background: var(--light-bg); color: var(--text-primary);
+      font-size: 15px; line-height: 1.6;
+    }
+    /* nav */
+    nav {
+      background: var(--brand-navy); color: #fff;
+      display: flex; align-items: center; flex-wrap: wrap;
+      padding: 0 1.5rem; min-height: 56px; gap: 1.25rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    }
+    nav .brand {
+      font-weight: 700; font-size: 1.2rem; color: #fff;
+      text-decoration: none;
+    }
+    nav a {
+      color: #cbd5e1; text-decoration: none; font-size: 0.95rem;
+      transition: color .2s;
+    }
+    nav a:hover, nav a.active { color: #fff; }
+    nav a.active { border-bottom: 2px solid var(--brand-blue); padding-bottom: 2px; }
+    nav .spacer { flex: 1; }
+    nav .user-info { font-size: 0.85rem; color: #cbd5e1; }
+    nav .alert-badge {
+      display: inline-block; min-width: 18px; padding: 1px 6px;
+      background: var(--danger); color: #fff;
+      border-radius: 10px; font-size: 0.72rem; font-weight: 700;
+      vertical-align: middle; margin-left: 4px;
+    }
+    /* layout */
+    .container { max-width: 1280px; margin: 0 auto; padding: 2rem 1.5rem; }
+    /* cards */
+    .card {
+      background: #fff; border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+      padding: 1.5rem; margin-bottom: 1.5rem;
+    }
+    .card.compact { padding: 1rem 1.25rem; }
+    /* disclaimer banner */
+    .disclaimer {
+      background: #fef2f2; border-left: 4px solid var(--danger);
+      border-radius: 6px; padding: 0.75rem 1.25rem;
+      color: #7f1d1d; font-size: 0.9rem; font-weight: 500;
+      margin-bottom: 1.5rem;
+    }
+    /* alerts */
+    .alert {
+      border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem;
+      font-size: .95rem; border-left: 4px solid;
+    }
+    .alert-success { background: #f0fdf4; color: #166534; border-left-color: var(--success); }
+    .alert-danger  { background: #fef2f2; color: #7f1d1d; border-left-color: var(--danger); }
+    .alert-warning { background: #fffbeb; color: #92400e; border-left-color: var(--warning); }
+    .alert-info    { background: #eff6ff; color: #0c4a6e; border-left-color: var(--brand-blue); }
+    /* tables */
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th {
+      background: var(--brand-navy); color: #fff;
+      padding: 0.75rem 1rem; text-align: left; font-weight: 600;
+    }
+    td { padding: 0.7rem 1rem; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+    tr:hover td { background: #f1f5f9; }
+    /* buttons */
+    .btn {
+      display: inline-block; padding: 0.5rem 1.125rem;
+      border-radius: 6px; border: none; cursor: pointer;
+      font-size: .9rem; font-weight: 600; text-decoration: none;
+      transition: all .15s; line-height: 1.2;
+    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 2px 6px rgba(0,0,0,.1); }
+    .btn-primary  { background: var(--brand-navy); color: #fff; }
+    .btn-success  { background: var(--success); color: #fff; }
+    .btn-danger   { background: var(--danger); color: #fff; }
+    .btn-warning  { background: var(--warning); color: #fff; }
+    .btn-secondary{ background: var(--text-secondary); color: #fff; }
+    .btn-outline  { background: #fff; color: var(--brand-navy);
+                    border: 1px solid var(--border-color); }
+    .btn-sm       { padding: 0.35rem 0.75rem; font-size: .85rem; }
+    /* forms */
+    .form-group { margin-bottom: 1.25rem; }
+    label { display: block; font-weight: 600; font-size: .9rem;
+            margin-bottom: 0.4rem; color: var(--text-primary); }
+    input[type=text], input[type=email], input[type=password],
+    input[type=date], input[type=number], select, textarea {
+      width: 100%; padding: 0.6rem 0.875rem;
+      border: 1px solid var(--border-color); border-radius: 6px;
+      font-size: .95rem; background: #fff; transition: border-color .2s;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--brand-blue);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    /* misc */
+    h1 { font-size: 1.75rem; margin: 0 0 1.25rem; color: var(--brand-navy); font-weight: 700; }
+    h2 { font-size: 1.25rem; margin: 0 0 1rem; color: var(--brand-navy); font-weight: 600; }
+    h3 { font-size: 1.05rem; margin: 0 0 0.75rem; color: var(--text-primary); font-weight: 600; }
+    .badge {
+      display: inline-block; padding: 0.3rem 0.65rem;
+      border-radius: 12px; font-size: .78rem; font-weight: 700;
+    }
+    .badge-admin     { background: #f3e8ff; color: #6b21a8; }
+    .badge-doctor    { background: #dbeafe; color: #1e40af; }
+    .badge-clinician { background: #ccfbf1; color: #134e4a; }
+    .badge-nurse     { background: #fce7f3; color: #831843; }
+    .badge-viewer    { background: #f3f4f6; color: #374151; }
+    .badge-online    { background: #dcfce7; color: #166534; }
+    .badge-offline   { background: #fee2e2; color: #7f1d1d; }
+    .badge-warning   { background: #fef3c7; color: #92400e; }
+    .badge-critical  { background: #fee2e2; color: #b91c1c; }
+    .badge-info      { background: #dbeafe; color: #1e40af; }
+    .badge-pending   { background: #fef9c3; color: #713f12; }
+    .badge-success   { background: #dcfce7; color: #166534; }
+    .muted { color: var(--text-secondary); font-size: .85rem; }
+    .stat-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr));
+      gap: 1rem; margin-bottom: 1.5rem;
+    }
+    .stat-box {
+      background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+      border: 1px solid #bfdbfe;
+      border-radius: 10px; padding: 1.25rem 1rem; text-align: center;
+      transition: box-shadow .2s;
+    }
+    .stat-box:hover { box-shadow: 0 4px 12px rgba(37,99,235,.15); }
+    .stat-box .val { font-size: 1.75rem; font-weight: 700; color: var(--brand-navy); }
+    .stat-box .lbl { font-size: .8rem; color: #0369a1; margin-top: 0.35rem; font-weight: 500; }
+    .stat-box.warning { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-color: #fde68a; }
+    .stat-box.danger  { background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%); border-color: #fecaca; }
+    .stat-box.warning .val, .stat-box.danger .val { color: var(--critical); }
+    .form-grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px,1fr)); gap: 1rem; }
+    .form-grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 1rem; }
+    /* live tile */
+    .vitals-tile {
+      border: 1px solid var(--border-color); border-radius: 10px;
+      padding: 1rem 1.25rem; background: #fff; margin-bottom: 1rem;
+    }
+    .vitals-tile.crit { border-color: var(--critical); background: #fef2f2; }
+    .vitals-tile.warn { border-color: var(--warning);  background: #fffbeb; }
+    .vitals-tile h3 { margin: 0 0 .5rem; }
+    .vitals-row {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(120px,1fr));
+      gap: .75rem;
+    }
+    .vital {
+      background: #f8fafc; border-radius: 8px; padding: .65rem .85rem;
+      border: 1px solid var(--border-color);
+    }
+    .vital .lbl { font-size: .7rem; text-transform: uppercase;
+                  color: var(--text-secondary); letter-spacing: .04em; }
+    .vital .val { font-size: 1.4rem; font-weight: 700; color: var(--brand-navy); }
+    .spark { display: block; width: 100%; height: 36px; }
+    code.inline {
+      background: #f1f5f9; padding: 0.18rem 0.4rem; border-radius: 3px;
+      font-size: 0.82rem; font-family: ui-monospace, monospace;
+    }
+    .chip {
+      display: inline-block; padding: 0.2rem 0.55rem;
+      border-radius: 999px; font-size: 0.75rem; font-weight: 600;
+      background: #e2e8f0; color: var(--text-primary);
+    }
+    .toolbar {
+      display: flex; gap: .5rem; flex-wrap: wrap; align-items: center;
+      margin-bottom: 1rem;
+    }
+    .toolbar .grow { flex: 1; }
+  </style>
+</head>
+<body>
+<nav>
+  <a class="brand" href="{{ url_for('index') }}">🌙 SOMNI-Guard</a>
+  {% if current_user.is_authenticated %}
+    <a href="{{ url_for('dashboard') }}"
+       class="{{ 'active' if request.endpoint == 'dashboard' else '' }}">Dashboard</a>
+    <a href="{{ url_for('live_monitor') }}"
+       class="{{ 'active' if request.endpoint in ('live_monitor',) else '' }}">Live</a>
+    <a href="{{ url_for('patients') }}"
+       class="{{ 'active' if request.endpoint in ('patients','patient_detail') else '' }}">Patients</a>
+    <a href="{{ url_for('alerts_view') }}"
+       class="{{ 'active' if request.endpoint == 'alerts_view' else '' }}">
+      Alerts{% if unack_count and unack_count > 0 %}<span class="alert-badge">{{ unack_count }}</span>{% endif %}
+    </a>
+    <a href="{{ url_for('devices_view') }}"
+       class="{{ 'active' if request.endpoint == 'devices_view' else '' }}">Devices</a>
+    {% if current_user.role == 'admin' %}
+      <a href="{{ url_for('manage_users') }}"
+         class="{{ 'active' if request.endpoint == 'manage_users' else '' }}">Users</a>
+      <a href="{{ url_for('audit_log_view') }}"
+         class="{{ 'active' if request.endpoint == 'audit_log_view' else '' }}">Audit</a>
+    {% endif %}
+    <span class="spacer"></span>
+    <a href="{{ url_for('user_profile') }}">{{ current_user.username }} ({{ current_user.role }})</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
+  {% else %}
+    <span class="spacer"></span>
+    <span class="user-info">Two-factor authentication required</span>
+  {% endif %}
+</nav>
+
+<div class="container">
+  <div class="disclaimer">
+    ⚠️ <strong>NON-CLINICAL EDUCATIONAL PROTOTYPE.</strong>
+    This system is NOT a regulated medical device and must NOT be used for
+    diagnosis or treatment.
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, msg in messages %}
+      <div class="alert alert-{{ cat }}">{{ msg }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

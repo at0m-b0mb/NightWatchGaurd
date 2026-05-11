@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — SOMNI-Guard{% endblock %}
+{% block content %}
+<h1>📊 Dashboard</h1>
+
+<div class="stat-grid">
+  <div class="stat-box">
+    <div class="val">{{ patients|length }}</div>
+    <div class="lbl">Active patients</div>
+  </div>
+  <div class="stat-box">
+    <div class="val">{{ sessions|length }}</div>
+    <div class="lbl">Total sessions</div>
+  </div>
+  <div class="stat-box">
+    <div class="val">
+      {{ sessions | selectattr('ended_at', 'none') | list | length }}
+    </div>
+    <div class="lbl">Active sessions</div>
+  </div>
+  <div class="stat-box {{ 'danger' if unack_count > 0 else '' }}">
+    <div class="val">{{ unack_count }}</div>
+    <div class="lbl">Open alerts</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="toolbar">
+    <h2 style="margin:0;">Recent sleep sessions</h2>
+    <span class="grow"></span>
+    <a class="btn btn-outline btn-sm" href="{{ url_for('live_monitor') }}">Open live monitor →</a>
+  </div>
+  {% if sessions %}
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Patient</th>
+        <th>Device</th>
+        <th>Started</th>
+        <th>Ended</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in sessions[:30] %}
+      <tr>
+        <td>{{ s.id }}</td>
+        <td><a href="{{ url_for('patient_detail', patient_id=s.patient_id) }}">{{ s.patient_name }}</a></td>
+        <td><code class="inline">{{ s.device_id }}</code></td>
+        <td>{{ s.started_at }}</td>
+        <td>{{ s.ended_at or '⏳ ongoing' }}</td>
+        <td>
+          {% if s.discharged_at %}
+            <span class="badge badge-success">discharged</span>
+          {% elif s.ended_at %}
+            <span class="badge badge-info">ended</span>
+          {% else %}
+            <span class="badge badge-warning">live</span>
+          {% endif %}
+        </td>
+        <td>
+          <a class="btn btn-primary btn-sm" href="{{ url_for('session_detail', session_id=s.id) }}">View</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">No sessions yet. The Pico device will create sessions automatically when it connects.</p>
+  {% endif %}
+</div>
+
+<div class="card compact">
+  <h3>Quick actions</h3>
+  <a class="btn btn-primary" href="{{ url_for('patients') }}">👥 Manage patients</a>
+  <a class="btn btn-outline" href="{{ url_for('alerts_view') }}" style="margin-left:.4rem;">🚨 Alerts</a>
+  <a class="btn btn-outline" href="{{ url_for('devices_view') }}" style="margin-left:.4rem;">📡 Devices</a>
+  {% if current_user.role == 'admin' %}
+    <a class="btn btn-secondary" href="{{ url_for('manage_users') }}" style="margin-left:.4rem;">⚙️ Users</a>
+    <a class="btn btn-secondary" href="{{ url_for('audit_log_view') }}" style="margin-left:.4rem;">🗂️ Audit log</a>
+  {% endif %}
+</div>
+
+{% if current_user.role == 'admin' and recent_audit %}
+<div class="card">
+  <h2>🔐 Recent audit events</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Timestamp</th>
+        <th>Event</th>
+        <th>Username</th>
+        <th>IP</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in recent_audit %}
+      <tr>
+        <td>{{ event.timestamp }}</td>
+        <td><code class="inline">{{ event.event_type }}</code></td>
+        <td>{{ event.username or '—' }}</td>
+        <td><code class="inline">{{ event.ip_address or '—' }}</code></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="margin-top:.75rem;"><a class="btn btn-outline btn-sm" href="{{ url_for('audit_log_view') }}">Open full audit log →</a></p>
+</div>
+{% endif %}
+{% endblock %}

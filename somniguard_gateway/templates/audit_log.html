@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Audit log — SOMNI-Guard{% endblock %}
+{% block content %}
+<h1>🗂️ Audit log</h1>
+
+<div class="card">
+  <form method="get" action="{{ url_for('audit_log_view') }}">
+    <div class="form-grid-3">
+      <div class="form-group" style="margin:0;">
+        <label>Event type</label>
+        <select name="event_type">
+          <option value="">— Any —</option>
+          {% for t in types %}
+            <option value="{{ t }}" {% if t == filter_event_type %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Username</label>
+        <input type="text" name="username" value="{{ filter_username or '' }}" placeholder="any">
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label>Limit (10–2000)</label>
+        <input type="number" name="limit" min="10" max="2000" value="{{ filter_limit }}">
+      </div>
+    </div>
+    <div class="toolbar" style="margin-top:.75rem;">
+      <button type="submit" class="btn btn-primary">Apply filters</button>
+      <a class="btn btn-outline"
+         href="{{ url_for('audit_log_csv', event_type=filter_event_type or '', username=filter_username or '', limit=5000) }}">
+        Export CSV
+      </a>
+      <a class="btn btn-secondary" href="{{ url_for('audit_log_view') }}">Reset</a>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Events ({{ rows|length }})</h2>
+  {% if rows %}
+  <div style="overflow-x:auto;">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:170px;">Timestamp</th>
+          <th>Event</th>
+          <th>Username</th>
+          <th>IP</th>
+          <th>Details</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>{{ r.timestamp }}</td>
+          <td><code class="inline">{{ r.event_type }}</code></td>
+          <td>{{ r.username or '—' }}</td>
+          <td><code class="inline">{{ r.ip_address or '—' }}</code></td>
+          <td style="font-family: ui-monospace, monospace; font-size:.78rem;
+                     max-width:480px; overflow-wrap:anywhere;">{{ r.details or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="muted">No audit events match the current filters.</p>
+  {% endif %}
+</div>
+{% endblock %}

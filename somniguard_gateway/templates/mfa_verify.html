@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Two-factor verification — SOMNI-Guard{% endblock %}
+{% block content %}
+<div style="max-width:420px; margin:3rem auto;">
+  <div class="card">
+    <h1 style="text-align:center; margin-bottom:0.5rem;">🛡️ Two-factor</h1>
+    <p class="muted" style="text-align:center; margin:0 0 1.5rem;">
+      Step 2 of 2 — open your authenticator app and enter the 6-digit code,
+      or use one of your single-use backup codes.
+    </p>
+    <form method="post" novalidate>
+      {{ form.hidden_tag() }}
+      <div class="form-group">
+        {{ form.code.label }}
+        {{ form.code(placeholder="123456 or backup code",
+                     autocomplete="one-time-code",
+                     inputmode="numeric",
+                     autofocus=True) }}
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;">
+        Verify and sign in
+      </button>
+    </form>
+    <p class="muted" style="text-align:center; margin-top:1rem; font-size:.85rem;">
+      <a href="{{ url_for('login') }}">Cancel and start over</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

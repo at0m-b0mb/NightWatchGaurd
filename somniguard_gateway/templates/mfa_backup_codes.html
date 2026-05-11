@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}MFA backup codes — SOMNI-Guard{% endblock %}
+{% block content %}
+<div style="max-width:600px; margin:2rem auto;">
+  <div class="card">
+    <h1>🔑 Save your backup codes</h1>
+    <div class="alert alert-warning">
+      <strong>This is the ONLY time these codes will be shown.</strong>
+      Each code works exactly once and grants login access without your
+      authenticator. Store them in a password manager or print this page.
+    </div>
+
+    <ul style="list-style:none; padding:0; margin:1rem 0;
+               display:grid; grid-template-columns:repeat(2, 1fr); gap:.5rem;">
+      {% for code in codes %}
+        <li style="font-family: ui-monospace, monospace;
+                   background:#f5f7fa; border:1px solid #d6deea;
+                   border-radius:6px; padding:.45rem .8rem; text-align:center;
+                   user-select:all; font-size:1rem;">{{ code }}</li>
+      {% endfor %}
+    </ul>
+
+    <p class="muted">
+      Generated {{ codes|length }} codes. When you have used most of them
+      you can regenerate a fresh set from your account page — doing so
+      invalidates any unused codes.
+    </p>
+
+    <a href="{{ url_for('user_profile') }}" class="btn btn-primary"
+       style="width:100%; text-align:center; margin-top:1rem;">
+      I have saved my backup codes
+    </a>
+  </div>
+</div>
+{% endblock %}
