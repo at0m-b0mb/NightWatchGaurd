@@ -207,27 +207,37 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
     print("[SOMNI][WIFI] Connecting to '{}'…".format(ssid))
     wlan.connect(ssid, password)
 
+    _CYW43_STAT_IDLE = 0
+    _CYW43_STAT_CONNECTING = 1
+    _CYW43_STAT_WRONG_PASSWORD = 2
+    _CYW43_STAT_NO_AP_FOUND = 3
+    _CYW43_STAT_CONNECT_FAIL = 4
     _CYW43_STAT_GOT_IP = 1010
     _STATUS_LABELS = {
-        0: "idle (link down)",
-        1: "connecting",
-        2: "wrong password (STAT_WRONG_PASSWORD)",
-        3: "no AP found (STAT_NO_AP_FOUND)",
-        4: "connect failed",
+        _CYW43_STAT_IDLE: "idle (link down)",
+        _CYW43_STAT_CONNECTING: "connecting",
+        _CYW43_STAT_WRONG_PASSWORD: "wrong password (STAT_WRONG_PASSWORD)",
+        _CYW43_STAT_NO_AP_FOUND: "no AP found (STAT_NO_AP_FOUND)",
+        _CYW43_STAT_CONNECT_FAIL: "connect failed",
         _CYW43_STAT_GOT_IP: "got IP (CYW43 STAT_GOT_IP)",
         -1: "connection failed (legacy)",
         -2: "no AP found (legacy)",
         -3: "wrong password (legacy)",
     }
-    _FAIL_FAST = {-3, -2, -1, 2, 3, 4}
+    _FAIL_FAST = {
+        _CYW43_STAT_WRONG_PASSWORD,
+        _CYW43_STAT_NO_AP_FOUND,
+        _CYW43_STAT_CONNECT_FAIL,
+        -1,
+        -2,
+        -3,
+    }
     deadline = time.time() + timeout_s
     last_status = None
     while not wlan.isconnected():
         if feed_wdt is not None:
             feed_wdt()
         status = wlan.status()
-        if status == _CYW43_STAT_GOT_IP:
-            break
         if status in _FAIL_FAST:
             label = _STATUS_LABELS.get(status, str(status))
             print("[SOMNI][WIFI] Connection failed — status={} ({})".format(status, label))
@@ -241,6 +251,12 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
                   "(status={}).".format(timeout_s, status))
             return None
         time.sleep(1)
+
+    status = wlan.status()
+    if status != last_status:
+        label = _STATUS_LABELS.get(status)
+        if label is not None:
+            print("[SOMNI][WIFI] status → {} ({})".format(status, label))
 
     ip = wlan.ifconfig()[0]
     print("[SOMNI][WIFI] Connected. IP: {}".format(ip))
