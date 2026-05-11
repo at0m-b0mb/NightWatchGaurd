@@ -207,13 +207,14 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
     print("[SOMNI][WIFI] Connecting to '{}'…".format(ssid))
     wlan.connect(ssid, password)
 
-    _STATUS = {
+    _CYW43_STAT_GOT_IP = 1010
+    _STATUS_LABELS = {
         0: "idle (link down)",
         1: "connecting",
         2: "wrong password (STAT_WRONG_PASSWORD)",
         3: "no AP found (STAT_NO_AP_FOUND)",
         4: "connect failed",
-        1010: "got IP (CYW43 STAT_GOT_IP)",
+        _CYW43_STAT_GOT_IP: "got IP (CYW43 STAT_GOT_IP)",
         -1: "connection failed (legacy)",
         -2: "no AP found (legacy)",
         -3: "wrong password (legacy)",
@@ -225,15 +226,15 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
         if feed_wdt is not None:
             feed_wdt()
         status = wlan.status()
-        if status == 1010:
+        if status == _CYW43_STAT_GOT_IP:
             break
         if status in _FAIL_FAST:
-            label = _STATUS.get(status, str(status))
+            label = _STATUS_LABELS.get(status, str(status))
             print("[SOMNI][WIFI] Connection failed — status={} ({})".format(status, label))
             return None
         if status != last_status:
             print("[SOMNI][WIFI] status → {} ({})".format(
-                status, _STATUS.get(status, "unknown")))
+                status, _STATUS_LABELS.get(status, "unknown")))
             last_status = status
         if time.time() > deadline:
             print("[SOMNI][WIFI] Connection timeout after {}s "
