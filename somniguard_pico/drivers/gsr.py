@@ -82,11 +82,6 @@ class GSRSensor:
         Provides a public interface so callers (e.g. SensorSampler) can check
         GSR availability without accessing the private ``_adc`` attribute.
 
-        Note: True means the ADC *hardware* is ready.  It does NOT guarantee
-        that the sensor module is physically wired or that the electrodes are
-        on skin.  Use classify_contact() / read_conductance()["contact"] for
-        electrode-state detection.
-
         Args:
             None
 
@@ -94,46 +89,6 @@ class GSRSensor:
             bool: True if the ADC initialised without error, False otherwise.
         """
         return self._adc is not None
-
-    def classify_contact(self, conductance_us):
-        """
-        Classify the electrode-contact state from a single conductance value.
-
-        The Grove GSR v1.2 wired to the Pico ADC (GP26) sits in one of three
-        distinct conductance ranges depending on whether the module is plugged
-        in and whether the electrodes are resting on skin:
-
-          "disconnected"
-            conductance_us > config.GSR_DISCONNECTED_THRESHOLD_US  (default 250 µS)
-            GP26 is floating because the sensor module is not plugged in, or
-            the SIG wire is loose.  The voltage-divider formula interprets the
-            floating ~0.7 V pin voltage as an anomalously high conductance.
-            Readings in this state are meaningless.
-
-          "no_contact"
-            conductance_us < config.GSR_CONTACT_THRESHOLD_US  (default 80 µS)
-            The module is powered (VCC/GND present) and SIG is connected, but
-            the electrodes are in the air.  The open circuit creates very high
-            effective R_skin, so V_adc approaches VCC and the formula returns
-            a near-zero conductance.  Readings in this state are meaningless.
-
-          "contact"
-            config.GSR_CONTACT_THRESHOLD_US ≤ conductance_us
-                ≤ config.GSR_DISCONNECTED_THRESHOLD_US
-            The electrodes are on skin.  This is the only state in which
-            conductance_us is a physiologically meaningful reading.
-
-        Args:
-            conductance_us (float): Conductance value from read_conductance().
-
-        Returns:
-            str: One of "disconnected", "no_contact", or "contact".
-        """
-        if conductance_us > config.GSR_DISCONNECTED_THRESHOLD_US:
-            return "disconnected"
-        if conductance_us < config.GSR_CONTACT_THRESHOLD_US:
-            return "no_contact"
-        return "contact"
 
     def read_raw(self):
         """
@@ -167,9 +122,9 @@ class GSRSensor:
 
         Edge cases:
         - If V_adc ≈ 0 V (short to GND) or ≈ 3.3 V (open circuit), the
-          conductance result will be extreme or near-zero.  The "contact"
-          field in the returned dict classifies the reading so the caller
-          knows whether conductance_us is a physiologically meaningful value.
+          conductance result will be extreme or infinite.  The reading is
+          still returned with valid=True, but the caller (sampler) can
+          apply range‑checks if desired.
 
         Args:
             None
@@ -179,14 +134,8 @@ class GSRSensor:
                 "raw"            : int,    # raw ADC count [0, 65535]
                 "voltage"        : float,  # ADC pin voltage in volts
                 "conductance_us" : float,  # skin conductance in µS
-                "contact"        : str,    # "contact" | "no_contact" | "disconnected"
-                "valid"          : bool    # False only on ADC hardware failure
+                "valid"          : bool    # False only on ADC failure
             }
-
-            "contact" values:
-              "contact"      — electrodes on skin; conductance_us is valid
-              "no_contact"   — sensor wired but electrodes not on skin
-              "disconnected" — sensor not wired; ADC pin is floating
         """
         raw = self.read_raw()
 
@@ -205,13 +154,10 @@ class GSRSensor:
         # Conductance in µS = 1 / R_skin × 10^6
         conductance_us = (1.0 / max(r_skin, epsilon)) * 1_000_000
 
-        contact = self.classify_contact(conductance_us)
-
         return {
             "raw":            raw,
             "voltage":        round(voltage, 4),
             "conductance_us": round(conductance_us, 3),
-            "contact":        contact,
             "valid":          self._adc is not None,
         }
 
@@ -228,9 +174,7 @@ class GSRSensor:
 
         Returns:
             dict: Same structure as read_conductance(), with values averaged
-                  over 'window' samples.  The "contact" field reflects the
-                  state of the averaged conductance value.
-                  valid=False if ADC is unavailable.
+                  over 'window' samples.  valid=False if ADC is unavailable.
         """
         if window is None:
             window = config.GSR_SMOOTH_WINDOW
@@ -250,13 +194,9 @@ class GSRSensor:
             total_volt += reading["voltage"]
             total_cond += reading["conductance_us"]
 
-        avg_cond = round(total_cond / window, 3)
-        contact  = self.classify_contact(avg_cond)
-
         return {
             "raw":            total_raw  // window,
             "voltage":        round(total_volt / window, 4),
-            "conductance_us": avg_cond,
-            "contact":        contact,
+            "conductance_us": round(total_cond / window, 3),
             "valid":          valid,
         }

@@ -207,32 +207,65 @@ def connect_wifi(ssid, password, timeout_s=30, feed_wdt=None):
     print("[SOMNI][WIFI] Connecting to '{}'…".format(ssid))
     wlan.connect(ssid, password)
 
-    _FAIL_FAST = {-3, -2, -1, 2, 3, 4}
+    _CYW43_STAT_IDLE = 0
+    _CYW43_STAT_CONNECTING = 1
+    _CYW43_STAT_WRONG_PASSWORD = 2
+    _CYW43_STAT_NO_AP_FOUND = 3
+    _CYW43_STAT_CONNECT_FAIL = 4
+    _CYW43_STAT_GOT_IP = 1010
+    _STATUS_LABELS = {
+        _CYW43_STAT_IDLE: "idle (CYW43 STAT_IDLE)",
+        _CYW43_STAT_CONNECTING: "connecting (CYW43 STAT_CONNECTING)",
+        _CYW43_STAT_WRONG_PASSWORD: "wrong password (CYW43 STAT_WRONG_PASSWORD)",
+        _CYW43_STAT_NO_AP_FOUND: "no AP found (CYW43 STAT_NO_AP_FOUND)",
+        _CYW43_STAT_CONNECT_FAIL: "connect failed (CYW43 STAT_CONNECT_FAIL)",
+        _CYW43_STAT_GOT_IP: "got IP (CYW43 STAT_GOT_IP)",
+        -1: "connection failed (legacy)",
+        -2: "no AP found (legacy)",
+        -3: "wrong password (legacy)",
+    }
+    _FAIL_FAST = {
+        _CYW43_STAT_WRONG_PASSWORD,
+        _CYW43_STAT_NO_AP_FOUND,
+        _CYW43_STAT_CONNECT_FAIL,
+        -1,
+        -2,
+        -3,
+    }
+
+    def _log_status(status_value):
+        print("[SOMNI][WIFI] status → {} ({})".format(
+            status_value, _STATUS_LABELS.get(status_value, "unknown")))
+
     deadline = time.time() + timeout_s
-    seen_connecting = False
+    last_status = None
     while not wlan.isconnected():
         if feed_wdt is not None:
             feed_wdt()
         status = wlan.status()
-        if status == 1:
-            seen_connecting = True
-        if status in _FAIL_FAST or (seen_connecting and status == 0):
-            _NAMES = {
-                0: "idle/link-down (auth rejected?)",
-                2: "wrong password", 3: "no AP found", 4: "connect failed",
-                -1: "connection failed", -2: "no AP found", -3: "wrong password",
-            }
-            label = _NAMES.get(status, str(status))
+        if status in _FAIL_FAST:
+            label = _STATUS_LABELS.get(status, str(status))
             print("[SOMNI][WIFI] Connection failed — status={} ({})".format(status, label))
             return None
+        if status != last_status:
+            _log_status(status)
+            last_status = status
         if time.time() > deadline:
             print("[SOMNI][WIFI] Connection timeout after {}s "
-                  "(wlan.status={}).".format(timeout_s, status))
+                  "(status={}).".format(timeout_s, status))
             return None
         time.sleep(1)
 
+    status = wlan.status()
+    if status != last_status:
+        _log_status(status)
+
     ip = wlan.ifconfig()[0]
     print("[SOMNI][WIFI] Connected. IP: {}".format(ip))
+    try:
+        print("[SOMNI][WIFI] Signal: {} dBm".format(wlan.status("rssi")))
+    except Exception as exc:
+        print("[SOMNI][WIFI] Signal unavailable: {}".format(exc))
     return ip
 
 

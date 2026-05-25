@@ -208,26 +208,11 @@ def format_reading(sensor_data):
         accel=accel_str,
     )
 
-    # GSR — only appended when the key is present (GSR_ENABLED=True).
-    # The "contact" field classifies the electrode state so we show a
-    # meaningful label instead of a misleading conductance number when the
-    # sensor is not on skin or is not wired.
-    #
-    #   contact="contact"      → GSR=123.45µS   (real skin conductance)
-    #   contact="no_contact"   → GSR=---         (wired but not on skin)
-    #   contact="disconnected" → GSR=DISCONN     (floating ADC, not wired)
+    # GSR — only appended when the key is present (GSR_ENABLED=True)
     if "gsr" in sensor_data:
-        gsr_d   = sensor_data["gsr"]
-        contact = gsr_d.get("contact", "contact")  # default: assume contact for old firmware
-        gsr_us  = gsr_d.get("conductance_us")
-        if contact == "disconnected":
-            gsr_str = "DISCONN"
-        elif contact == "no_contact":
-            gsr_str = "---"
-        elif gsr_us is not None:
-            gsr_str = "{:.2f}\u00b5S".format(gsr_us)
-        else:
-            gsr_str = "---"
+        gsr_d  = sensor_data["gsr"]
+        gsr_us = gsr_d.get("conductance_us")
+        gsr_str = "{:.2f}\u00b5S".format(gsr_us) if gsr_us is not None else "---"
         line += " GSR={}".format(gsr_str)
 
     return line

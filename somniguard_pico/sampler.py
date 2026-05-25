@@ -107,17 +107,6 @@ class SensorSampler:
         self._spo2_divisor  = self._cfg.ACCEL_RATE_HZ // self._cfg.SPO2_RATE_HZ
         self._callback      = None
 
-        # GSR contact-state tracking.
-        # _gsr_last_contact: the contact state from the previous GSR reading.
-        #   None  = no reading taken yet.
-        #   str   = "contact" | "no_contact" | "disconnected"
-        # _gsr_state_ticks: counts 1 Hz ticks since the last state log so we
-        #   can periodically re-remind the operator when the sensor is not
-        #   in the "contact" state (every GSR_STATE_REMIND_TICKS seconds).
-        self._gsr_last_contact   = None
-        self._gsr_state_ticks    = 0
-        self._GSR_REMIND_TICKS   = 30  # re-log non-contact state every 30 s
-
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -149,29 +138,6 @@ class SensorSampler:
             "[SOMNI][SAMPLER] Sensor check — "
             "MAX30102:{max30102} ADXL345:{adxl345} GSR:{gsr}".format(**results)
         )
-
-        # Check the GSR electrode-contact state at startup so the operator
-        # immediately knows whether the sensor is wired and on skin, rather
-        # than discovering spurious readings later.
-        if self._gsr is not None and results["gsr"]:
-            try:
-                sample  = self._gsr.read_conductance()
-                contact = sample.get("contact", "unknown")
-                us      = sample.get("conductance_us", 0.0)
-                self._gsr_last_contact = contact
-                _GSR_STATE_MSGS = {
-                    "contact":      "[SOMNI][GSR] Electrode contact OK ({:.1f} µS) — sensor on skin.",
-                    "no_contact":   "[SOMNI][GSR] Sensor wired but NOT on skin ({:.1f} µS) — attach electrodes to fingers.",
-                    "disconnected": "[SOMNI][GSR] Sensor NOT connected ({:.1f} µS) — GP26 is floating. Check VCC/GND/SIG wiring.",
-                }
-                msg = _GSR_STATE_MSGS.get(
-                    contact,
-                    "[SOMNI][GSR] Unknown contact state '{}' ({:.1f} µS).".format(contact, us),
-                )
-                print(msg.format(us))
-            except Exception as exc:
-                print("[SOMNI][GSR] Contact check error at startup: {}".format(exc))
-
         return results
 
     def read_all(self):
@@ -214,8 +180,7 @@ class SensorSampler:
         if self._gsr is not None:
             result["gsr"] = self._safe_read(
                 self._gsr.read_conductance,
-                {"raw": 0, "voltage": 0.0, "conductance_us": 0.0,
-                 "contact": "disconnected", "valid": False},
+                {"raw": 0, "voltage": 0.0, "conductance_us": 0.0, "valid": False},
             )
         return result
 
@@ -268,38 +233,11 @@ class SensorSampler:
                         "accel":        accel,
                     }
                     if self._gsr is not None:
-                        gsr_data = self._safe_read(
+                        data["gsr"] = self._safe_read(
                             self._gsr.read_conductance,
-                            {"raw": 0, "voltage": 0.0, "conductance_us": 0.0,
-                             "contact": "disconnected", "valid": False},
+                            {"raw": 0, "voltage": 0.0,
+                             "conductance_us": 0.0, "valid": False},
                         )
-                        data["gsr"] = gsr_data
-
-                        # Detect contact-state transitions and periodically
-                        # remind the operator when the sensor is not on skin.
-                        # We do NOT log on every tick — only on change or
-                        # every _GSR_REMIND_TICKS seconds — so the console
-                        # stays readable even during a long session.
-                        new_contact = gsr_data.get("contact", "unknown")
-                        self._gsr_state_ticks += 1
-                        state_changed = (new_contact != self._gsr_last_contact)
-                        remind_due    = (
-                            new_contact != "contact"
-                            and self._gsr_state_ticks >= self._GSR_REMIND_TICKS
-                        )
-                        if state_changed or remind_due:
-                            self._gsr_state_ticks  = 0
-                            self._gsr_last_contact = new_contact
-                            _us = gsr_data.get("conductance_us", 0.0)
-                            if new_contact == "disconnected":
-                                print("[SOMNI][GSR] Not connected ({:.1f} µS) — "
-                                      "check sensor wiring (VCC/GND/SIG on GP26).".format(_us))
-                            elif new_contact == "no_contact":
-                                print("[SOMNI][GSR] On skin? No ({:.1f} µS) — "
-                                      "attach both electrodes to fingers.".format(_us))
-                            elif state_changed:
-                                print("[SOMNI][GSR] Skin contact detected "
-                                      "({:.1f} µS).".format(_us))
                 else:
                     # 10 Hz accelerometer‑only tick
                     data = {
